@@ -74,6 +74,43 @@ def load(p):
     return np.asarray(im).astype(np.int64)
 
 
+def calibrate_slot(t, o, max_shift=3):
+    """THE SLOT CALIBRATION DIAGNOSTIC (the agent-B receipt's named add-on,
+    report-only): for one 44x44 slot crop, measure WHAT the difference IS —
+    (a) the R/B channel-swap hypothesis (ae under ours' R/B exchanged),
+    (b) the integer-shift hypothesis (the best |ae| over the +-max_shift
+    window), (c) their interaction (the swap at the best shift). Additive
+    evidence only — it cannot demote or mask a verdict; the gate never
+    reads it. A slot whose ae collapses under the swap = the systemic
+    channel-swap signature; a slot whose ae collapses under a shift = the
+    systemic offset signature; neither = the genuine color-off content
+    class (the 14-e287 root cause's own lane)."""
+    ae_identity = int(np.abs(t - o).sum())
+    ae_rb = int(np.abs(t - o[..., ::-1]).sum())
+    best = None
+    best_rb = None
+    for dy in range(-max_shift, max_shift + 1):
+        for dx in range(-max_shift, max_shift + 1):
+            if dx == 0 and dy == 0:
+                continue
+            oo = np.roll(np.roll(o, dy, axis=0), dx, axis=1)
+            v = int(np.abs(t - oo).sum())
+            if best is None or v < best:
+                best, best_shift = v, [dx, dy]
+            v_rb = int(np.abs(t - oo[..., ::-1]).sum())
+            if best_rb is None or v_rb < best_rb:
+                best_rb, best_rb_shift = v_rb, [dx, dy]
+    return {
+        "ae_identity": ae_identity,
+        "ae_rb": ae_rb,
+        "swap_ratio": round(ae_rb / ae_identity, 3) if ae_identity else None,
+        "ae_best_shift": best if best is not None else ae_identity,
+        "best_shift": best_shift if best is not None else [0, 0],
+        "ae_best_shift_rb": best_rb if best_rb is not None else ae_rb,
+        "best_rb_shift": best_rb_shift if best_rb is not None else [0, 0],
+    }
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--truth", required=True)
@@ -98,6 +135,10 @@ def main():
                          "(the GUI chrome should be identical; the items are "
                          "the content)")
     ap.add_argument("--out", required=True)
+    ap.add_argument("--calibrate", action="store_true",
+                    help="add the per-slot calibration diagnostics (the swap"
+                         " / shift hypotheses per crop — additive evidence"
+                         " only, the verdict never reads it)")
     args = ap.parse_args()
 
     truth = load(args.truth)
@@ -120,7 +161,10 @@ def main():
         verdict = "GREEN" if ae <= args.slot_gate else "RED"
         if verdict == "RED":
             red_slots += 1
-        slots.append({"slot": slot, "ae": ae, "verdict": verdict})
+        slot_row = {"slot": slot, "ae": ae, "verdict": verdict}
+        if args.calibrate:
+            slot_row["calibration"] = calibrate_slot(t, o)
+        slots.append(slot_row)
     ok = frame_delta <= args.frame_gate and red_slots == 0
     verdict = "GREEN" if ok else "RED"
     report = {
@@ -131,6 +175,7 @@ def main():
         "slot_gate": args.slot_gate,
         "red_slots": red_slots,
         "slots": slots,
+        "calibrated": bool(args.calibrate),
         "note": "geometry + gates are FIRST-RUN-UNMEASURED (scale-3 GUI "
                 "math); the first run calibrates them",
     }

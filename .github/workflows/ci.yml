@@ -46,6 +46,7 @@ jobs:
           python3 scripts/cimscene/test-parity-channels.py
           python3 scripts/cimscene/test-capture-fingerprint.py
           python3 scripts/cimscene/test-registry-census.py
+          python3 scripts/cimscene/test-inv-diff.py
       - name: client download recovery
         run: |
           python3 scripts/visual/test-fetch-client.py

@@ -5912,6 +5912,57 @@ public final class CimSceneMod {
                         .append(slot.y).append('\t').append(id).append('\t')
                         .append(slot.container == viewer.getInventory() ? "player" : "menu").append('\t').append(slot.getContainerSlot()).append('\n');
             }
+            // THE MENULIVE FILL (the agent-C S-b design, env -Dcim.menulive=on):
+            // the gui pages shot EMPTY prove presence, not live data. The fill
+            // puts a DETERMINISTIC item in every menu slot — a pure function of
+            // the menu id and the slot index over the sorted MODDED item
+            // registry, the same function BOTH legs compute (the same
+            // scene-mod class rides the truth NeoForge server and the ours
+            // Paper boot), so the fill is symmetric — then broadcasts so the
+            // client screen renders the real slot state, and receipts the
+            // rows (slotdata) the report-only menulive-diff joins. The flip
+            // stays off until the owner calls it (the SOUND_FLIP pattern:
+            // the env-off build is byte-identical behavior).
+            if (MENULIVE) {
+                List<ResourceLocation> modded = new java.util.ArrayList<>();
+                for (net.minecraft.world.item.Item it : BuiltInRegistries.ITEM) {
+                    ResourceLocation rid = BuiltInRegistries.ITEM.getKey(it);
+                    if (rid != null && !rid.getNamespace().equals("minecraft")) {
+                        modded.add(rid);
+                    }
+                }
+                modded.sort(ResourceLocation::compareTo);
+                int filled = 0;
+                int fillFailed = 0;
+                int liveIdx = 0;
+                for (net.minecraft.world.inventory.Slot slot : viewer.containerMenu.slots) {
+                    int i = liveIdx++;
+                    if (slot.container == viewer.getInventory()) {
+                        continue;
+                    }
+                    try {
+                        ResourceLocation pick = modded.get(
+                                Math.floorMod(id.toString().hashCode() * 31 + i, modded.size()));
+                        net.minecraft.world.item.Item item = BuiltInRegistries.ITEM.get(pick);
+                        if (item == null || item == net.minecraft.world.item.Items.AIR) {
+                            continue;
+                        }
+                        slot.container.setItem(slot.getContainerSlot(), new net.minecraft.world.item.ItemStack(item));
+                        tsv.append("slotdata\t").append(i).append('\t').append(pick).append('\t').append(1).append('\n');
+                        filled++;
+                    } catch (Throwable t) {
+                        fillFailed++;
+                        tsv.append("slotdata-fail\t").append(i).append('\t')
+                                .append(t.getClass().getName()).append('\n');
+                    }
+                }
+                try {
+                    viewer.containerMenu.broadcastChanges();
+                } catch (Throwable t) {
+                    LOGGER.info("[cimscene] menulive broadcast failed for {}: {}", id, t.toString());
+                }
+                LOGGER.info("[cimscene] menulive filled menu={} slots={} failed={}", id, filled, fillFailed);
+            }
         }
         writeGuiManifest(namespace, page, id, "gallery-gui-" + namespace + "-p" + page, tsv, placed, failed, src);
     }
@@ -6252,6 +6303,12 @@ public final class CimSceneMod {
 
     /** Scoreboard tag shared by BOTH parity legs for gallery-entity cleanup. */
     static final String GALLERY_TAG = "cimgallery";
+
+    /** THE MENULIVE FLIP (-Dcim.menulive=on): the gui pages' live-slot fill.
+     *  Off by default — the env-off build is byte-identical behavior (the
+     *  SOUND_FLIP pattern: a new channel is born report-only and the owner
+     *  flips it when the receipts say so). */
+    static final boolean MENULIVE = Boolean.getBoolean("cim.menulive");
 
     /**
      * Settle delay (server ticks) before the entity-page manifest is

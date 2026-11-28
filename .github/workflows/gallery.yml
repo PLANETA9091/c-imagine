@@ -4164,6 +4164,7 @@ jobs:
                 pjoin 0 python3 scripts/cimscene/inv-diff.py --truth "$T" --ours "$O" \
                   --ns "$NS" --page "$p" \
                   --slot-gate 91752 --frame-gate 40 \
+                  --calibrate \
                   --out "gallery-report/diag-inv-$NS-p$p.json"
               else
                 echo "$NS inv page $p shots missing (tolerated: diagnostic)"
@@ -4786,6 +4787,9 @@ jobs:
           # THE CAPTURE-INTEGRITY receipt (report-only): the R/B-swap
           # detector's liveness fixture — the gate-flip precondition
           # (detected 3/3) can never start from a dead detector. Never gates.
+          # The verdict job's python carries no numpy (measured #648: the
+          # fixture rode ModuleNotFoundError and the json went missing).
+          pip install -q numpy pillow
           python3 scripts/cimscene/capture-fingerprint.py --fixture-only \
             --out gallery-verdict/capture-integrity.json \
             || echo "capture-integrity: the fixture rode non-zero (see the json)"
