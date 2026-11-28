@@ -156,6 +156,8 @@ public final class CimPlugin extends JavaPlugin implements Listener {
         dev.cim.paper.EnchantRegistry.install(getServer().getWorldContainer().toPath().toAbsolutePath(), log());
         // Modded damage types (crates/cim-damage): death messages and mod-caused damage.
         dev.cim.paper.DamageTypeRegistry.install(getServer().getWorldContainer().toPath().toAbsolutePath(), log());
+        // One-time fetch of the vanilla 1.21.1 client jar for the server-side screen scanner (off-thread).
+        dev.f2v.vm.discovery.VanillaClientJar.startAsync(Path.of(System.getProperty("user.dir", ".")));
         f2vInit();
         getServer().getPluginManager().registerEvents(new NativeModCommands(this), this);
         // Modded enchantments only on the modded items they belong to (see EnchantGate).

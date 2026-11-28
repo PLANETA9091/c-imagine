@@ -19,6 +19,7 @@ import java.util.stream.Stream;
  *   <li>the layer's NeoForge 1.21.1 install under the server directory: the Mojang server jar
  *       (srg-mapped, contains the common menus such as CraftingMenu) and the NeoForge universal
  *       jar (NeoForge base classes);</li>
+ *   <li>the vanilla 1.21.1 client jar in {@code cache/} (fetched once, see {@link VanillaClientJar});</li>
  *   <li>the Paper 26.3 cache jar, only as a last resort (different version, logged).</li>
  * </ol>
  * Client-only classes (Screen, ConfirmScreen, AbstractContainerScreen ...) are not in any server
@@ -70,6 +71,9 @@ final class VanillaArchives {
             F2VLog.warn("[vm] -Df2v.vanillaJar is not a file, falling back to auto-resolve: " + explicit);
         }
         Path userDir = Path.of(System.getProperty("user.dir", ".")).toAbsolutePath().normalize();
+        // The vanilla 1.21.1 CLIENT jar (fetched once at boot, see VanillaClientJar) carries the
+        // client-only screen classes. It waits for an in-flight download (bounded) before deciding.
+        Path clientJar = VanillaClientJar.awaitClientJar(userDir);
         for (Path base : List.of(userDir.resolve("layer1211"), userDir.resolve("srv").resolve("layer1211"))) {
             Path libs = base.resolve("libraries");
             Path serverJar = findServerSrgJar(libs.resolve("net/minecraft/server"));
@@ -77,7 +81,13 @@ final class VanillaArchives {
             out.add(serverJar);
             Path universal = findNeoForgeUniversal(libs.resolve("net/neoforged/neoforge"));
             if (universal != null) out.add(universal);
+            if (clientJar != null) out.add(clientJar);
             logOnce("vanilla archives auto-resolved (NeoForge 1.21.1 layer): " + out);
+            return out;
+        }
+        if (clientJar != null) {
+            out.add(clientJar);
+            logOnce("vanilla client archive auto-resolved (1.21.1 cache): " + clientJar);
             return out;
         }
         for (Path base : List.of(userDir.resolve("cache"), userDir.resolve("srv").resolve("cache"))) {
