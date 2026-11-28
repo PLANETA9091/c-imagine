@@ -1351,7 +1351,24 @@ public final class GalleryPack {
             texObj.addProperty(t.getKey(), t.getValue());
         }
         wrapper.add("textures", texObj);
-        wrapper.add("elements", mg.elements.deepCopy());
+        // THE CAPTURED-COLORS IDENTITY LAW (the #649 calibrated slots' named
+        // second mechanism): the captured vertex colors ARE the truth leg's
+        // FINAL colors (the quad dump = the truth ItemRenderer's output
+        // vertices) — ANY client-side light multiplication on top of them is
+        // the error. The measured per-slot deltas (the e291 forensics:
+        // channel-UNIFORM per-item scalars, -11..-98 dark, +55 bright — a
+        // light scalar per item, not a hue drift) name the multiplier: the
+        // wrapper's elements ride the block-model light pipeline and the
+        // client re-multiplies its own light sample. light_emission=15 (the
+        // 1.21.2+ element property, the emissive table's own lever) makes
+        // the element fullbright — the captured colors show as-is, the
+        // identity. The emissive table's per-item levels ride unaffected
+        // (their write happens on the same element objects below).
+        JsonArray litElements = mg.elements.deepCopy();
+        for (JsonElement el : litElements) {
+            el.getAsJsonObject().addProperty("light_emission", 15);
+        }
+        wrapper.add("elements", litElements);
         recordScale(WRAPPER_NS + ":items/i" + itemNo, mg.displayScale());
         String file = "assets/" + WRAPPER_NS + "/models/items/i" + itemNo + ".json";
         entries.put(file, wrapper.toString().getBytes(StandardCharsets.UTF_8));

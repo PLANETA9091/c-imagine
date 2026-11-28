@@ -7593,6 +7593,14 @@ public final class F2vPack {
                 expect(failures, model.has("gui_light") && expected[i].equals(
                                 model.get("gui_light").getAsString()),
                         "gui light: wrapper carries the chain-resolved value " + refs[i]);
+                boolean allLit = true;
+                for (JsonElement el : model.getAsJsonArray("elements")) {
+                    JsonObject eo = el.getAsJsonObject();
+                    allLit &= eo.has("light_emission") && eo.get("light_emission").getAsInt() == 15;
+                }
+                expect(failures, allLit,
+                        "gui light: the wrapper elements ride light_emission=15 (the captured-colors identity) "
+                                + refs[i]);
             }
         } finally {
             GalleryPack.resetJarCache();
