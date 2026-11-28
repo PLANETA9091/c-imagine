@@ -3,9 +3,22 @@
   "notes": "biomesoplenty:fir_leaves broken by hand. TRUTH: no shears, no silk touch, so the leaves are not dropped. Loot is random: fir_sapling at 5% (table_bonus chance 0.05 at fortune 0) and minecraft:stick at 2% (1-2 sticks). Compared with block_only: the cell is air after the break; the drops are random and not compared.",
   "setup": [
     "fill 304 121 304 316 130 316 minecraft:air",
-    "setblock 308 121 310 biomesoplenty:fir_leaves"
+    "setblock 308 120 310 minecraft:stone",
+    "give {player} biomesoplenty:fir_leaves 1"
   ],
   "steps": [
+    {
+      "do": "select",
+      "item": "biomesoplenty:fir_leaves"
+    },
+    {
+      "do": "place",
+      "pos": [
+        308,
+        121,
+        310
+      ]
+    },
     {
       "do": "tp",
       "pos": [

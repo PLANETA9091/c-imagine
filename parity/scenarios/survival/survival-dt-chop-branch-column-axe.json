@@ -4,12 +4,38 @@
   "setup": [
     "fill 304 121 304 316 130 316 minecraft:air",
     "setblock 308 120 310 minecraft:dirt",
-    "setblock 308 121 310 dynamictrees:oak_branch",
-    "setblock 308 122 310 dynamictrees:oak_branch",
-    "setblock 308 123 310 dynamictrees:oak_branch",
+    "give {player} dynamictrees:oak_branch 3",
     "give {player} minecraft:iron_axe 1"
   ],
   "steps": [
+    {
+      "do": "select",
+      "item": "dynamictrees:oak_branch"
+    },
+    {
+      "do": "place",
+      "pos": [
+        308,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "place",
+      "pos": [
+        308,
+        122,
+        310
+      ]
+    },
+    {
+      "do": "place",
+      "pos": [
+        308,
+        123,
+        310
+      ]
+    },
     {
       "do": "select",
       "item": "minecraft:iron_axe"

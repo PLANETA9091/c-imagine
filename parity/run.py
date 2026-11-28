@@ -278,7 +278,14 @@ def food_to(stack, value, max_ticks):
     try:
         p = stack.observe_player()
         if p["food"] < value:
-            raise RuntimeError("food %s already below %s" % (p["food"], value))
+            # raise food with the instant saturation effect: amplifier a restores a+1 food points, so
+            # amplifier value-food-1 lands food exactly on value (capped at 20); no drain needed then
+            stack.setup_command(sub("effect give {player} minecraft:saturation 1 %d"
+                                    % (value - int(p["food"]) - 1), stack.player))
+            stack.wait(4)
+            p = stack.observe_player()
+            if p["food"] < value:
+                raise RuntimeError("food %s still below %s after saturation" % (p["food"], value))
         while p["food"] > value and ticks < max_ticks:
             stack.wait(20)
             ticks += 20

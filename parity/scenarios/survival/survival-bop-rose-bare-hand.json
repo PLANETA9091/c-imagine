@@ -4,9 +4,21 @@
   "setup": [
     "fill 304 121 304 316 130 316 minecraft:air",
     "setblock 308 120 310 minecraft:grass_block",
-    "setblock 308 121 310 biomesoplenty:rose"
+    "give {player} biomesoplenty:rose 1"
   ],
   "steps": [
+    {
+      "do": "select",
+      "item": "biomesoplenty:rose"
+    },
+    {
+      "do": "place",
+      "pos": [
+        308,
+        121,
+        310
+      ]
+    },
     {
       "do": "tp",
       "pos": [

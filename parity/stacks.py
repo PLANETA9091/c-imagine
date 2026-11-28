@@ -1110,10 +1110,14 @@ class OursStack(Stack):
                 if i >= 0:
                     try:
                         obj, _ = decoder.raw_decode(line[i + len(OURS_INSPECT_PREFIX):])
-                        self.inspect_hits += 1
-                        return obj
                     except ValueError:
-                        pass
+                        continue
+                    if not isinstance(obj, dict):
+                        # the contract is one JSON object per line; a bare JSON string/number/list
+                        # (or a stray CIM-INSPECT mention in the log) is not a reply: keep reading
+                        continue
+                    self.inspect_hits += 1
+                    return obj
         self.inspect_misses += 1
         return None
 
@@ -1128,7 +1132,7 @@ class OursStack(Stack):
     def _server_inv(self):
         """Server inventory: list of {slot, index, id|None, count} from /cim inspect inv, or None."""
         insp = self.inspect("inv", self.player)
-        if insp is None or "slots" not in insp:
+        if not isinstance(insp, dict) or "slots" not in insp:
             return None
         out = []
         for sl in insp["slots"]:
@@ -1571,7 +1575,9 @@ class OursStack(Stack):
         """'/cim inspect screen' for the player when a menu is open on the server (drawn on the HUD by
         ScreenHud, which horizon-ctl reports as 'playing'), else None."""
         insp = self.inspect("screen", self.player)
-        return insp if insp and insp.get("open") else None
+        if not isinstance(insp, dict):
+            return None  # no reply (inspect has no screen kind on this server build, or a non-object line)
+        return insp if insp.get("open") else None
 
     def _screen_reply(self):
         """horizon-ctl screen; when Horizon says 'playing' and the server has a menu open, that menu

@@ -3,10 +3,23 @@
   "notes": "Vanilla hoe on biomesoplenty:origin_grass_block (the only BOP grass-like dirt block in the census). TRUTH: there is no BOP tilling entry in data (no tillable tag lists it); expected unchanged (block stays biomesoplenty:origin_grass_block). Unverified: BOP could register a tilling rule in code.",
   "setup": [
     "fill 304 121 304 316 130 316 minecraft:air",
-    "setblock 308 120 310 biomesoplenty:origin_grass_block",
+    "setblock 308 119 310 minecraft:stone",
+    "give {player} biomesoplenty:origin_grass_block 1",
     "give {player} minecraft:iron_hoe 1"
   ],
   "steps": [
+    {
+      "do": "select",
+      "item": "biomesoplenty:origin_grass_block"
+    },
+    {
+      "do": "place",
+      "pos": [
+        308,
+        120,
+        310
+      ]
+    },
     {
       "do": "select",
       "item": "minecraft:iron_hoe"

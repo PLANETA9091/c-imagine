@@ -3,10 +3,23 @@
   "notes": "Sneak plus right-click with a wrench picks up a placed create:shaft into the inventory. TRUTH: WrenchItem.useOn: when isShiftKeyDown and canWrenchPickup(state), the block is removed and the item returned (create:shaft). The interact step holds sneak (\"sneak\": true): truth-ctl holds key.sneak down around the click, OURS passes horizon-ctl interact --sneak.",
   "setup": [
     "fill 304 121 304 316 130 316 minecraft:air",
-    "setblock 308 121 310 create:shaft[axis=y]",
+    "setblock 308 120 310 minecraft:stone",
+    "give {player} create:shaft 1",
     "give {player} create:wrench 1"
   ],
   "steps": [
+    {
+      "do": "select",
+      "item": "create:shaft"
+    },
+    {
+      "do": "place",
+      "pos": [
+        308,
+        121,
+        310
+      ]
+    },
     {
       "do": "select",
       "item": "create:wrench"

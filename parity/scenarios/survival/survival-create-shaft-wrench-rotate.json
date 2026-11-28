@@ -3,10 +3,23 @@
   "notes": "A placed create:shaft (axis y) right-clicked with a wrench (no sneak). TRUTH: non-sneak wrench use goes to IWrenchable.onWrenched (WrenchItem bytecode); for the shaft the axis changes (ShaftBlock uses Rotation to rotate). The exact new axis is not verified from code; expected only that the axis changes, and the wrench is not consumed.",
   "setup": [
     "fill 304 121 304 316 130 316 minecraft:air",
-    "setblock 308 121 310 create:shaft[axis=y]",
+    "setblock 308 120 310 minecraft:stone",
+    "give {player} create:shaft 1",
     "give {player} create:wrench 1"
   ],
   "steps": [
+    {
+      "do": "select",
+      "item": "create:shaft"
+    },
+    {
+      "do": "place",
+      "pos": [
+        308,
+        121,
+        310
+      ]
+    },
     {
       "do": "select",
       "item": "create:wrench"
