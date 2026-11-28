@@ -6474,6 +6474,7 @@ public final class F2vPack {
         doorCompositionSelftest(failures);
         carrierSelftest(failures);
         itemAllocationSelftest(failures);
+        wallDepthDensitySelftest(failures);
         itemWrapperGuiLightSelftest(failures);
         rawCaptureTextureSelftest(failures);
         capturedAlphaSelftest(failures);
@@ -7514,6 +7515,78 @@ public final class F2vPack {
                     "a missing ledger reads as no allocated items");
         } finally {
             deleteRecursively(tmp);
+        }
+    }
+
+    private static void wallDepthDensitySelftest(List<String> failures) throws IOException {
+        // THE PER-POLY DEPTH DENSITY fixture: a wall-facing quad with a
+        // CHAMFERED first edge (the basis gate rejects the snap — the e284
+        // real-shape receipt) at the DEEPEST plane (mzPlane=0 -> zw=9.993,
+        // g = 514.1333/((9.993-0.5)*16) = 3.38458). The quad spans
+        // a = 21.46626 (the (16,8) first edge's diagonal bbox extent),
+        // b = 14.31084 -> the depth-exact tile pw = round(21.46626*3.38458)
+        // = 73, ph = round(14.31084*3.38458) = 48. The legacy fixed-ppu
+        // lane baked round(*3.78125) = 81/54 — the client then drew the 81px
+        // tile at span*3.38458 = 72.65 screen px, a 0.897 minify (the
+        // deep-strut duplication staircase). The non-wall polys stay on the
+        // legacy path (byte-identical).
+        Path root = Files.createTempDirectory("f2v-walldepth");
+        try {
+            GalleryPack.setQuadDir(root);
+            ObjMesh.resetBaker();
+            GalleryPack.resetJarCache();
+            GalleryPack.resetModelScales();
+            var opaque = new java.awt.image.BufferedImage(16, 16,
+                    java.awt.image.BufferedImage.TYPE_INT_ARGB);
+            for (int y = 0; y < 16; y++) {
+                for (int x = 0; x < 16; x++) opaque.setRGB(x, y, 0xffc8a064);
+            }
+            var png = new java.io.ByteArrayOutputStream();
+            javax.imageio.ImageIO.write(opaque, "png", png);
+            TreeMap<String, byte[]> entries = new TreeMap<>();
+            entries.put(GalleryPack.spritePathPng("fixture:block/depth_tex"),
+                    png.toByteArray());
+            // 4 verts x (x,y,z,u,v): a chamfered wall quad at z=0
+            // (0,0,0)->(16,8,0)->(16,16,0)->(0,16,0), uv 0..16
+            Files.writeString(root.resolve("depth.tsv"),
+                    "fixture:block/depth_tex\t0\t-1"
+                    + "\t0\t0\t0\t0\t0"
+                    + "\t16\t8\t0\t16\t0"
+                    + "\t16\t16\t0\t16\t16"
+                    + "\t0\t16\t0\t0\t16\n",
+                    StandardCharsets.UTF_8);
+            List<String> warnings = new ArrayList<>();
+            var rows = GalleryPack.build(List.of(),
+                    List.of(new GalleryPack.Input("fixture:depth#qdepth")),
+                    entries, warnings, Map.of(), new ArrayList<>());
+            expect(failures, rows.size() == 1, "wall depth: fixture resolves");
+            if (rows.size() == 1) {
+                ObjMesh.flushBaker(GalleryPack.WRAPPER_NS, entries);
+                JsonObject model = JsonParser.parseString(new String(entries.get(
+                        "assets/c-imagine/models/gallery/g0.json"),
+                        StandardCharsets.UTF_8)).getAsJsonObject();
+                JsonObject f = model.getAsJsonArray("elements").get(0).getAsJsonObject()
+                        .getAsJsonObject("faces").entrySet().iterator().next()
+                        .getValue().getAsJsonObject();
+                JsonArray uv = f.getAsJsonArray("uv");
+                String texture = model.getAsJsonObject("textures")
+                        .get(f.get("texture").getAsString().substring(1)).getAsString();
+                var sheet = decodePng(entries.get(GalleryPack.spritePathPng(texture)));
+                int pwObs = (int) Math.round(Math.abs(uv.get(2).getAsDouble()
+                        - uv.get(0).getAsDouble()) * sheet.getWidth() / 16.0);
+                int phObs = (int) Math.round(Math.abs(uv.get(3).getAsDouble()
+                        - uv.get(1).getAsDouble()) * sheet.getHeight() / 16.0);
+                expect(failures, pwObs == 73 && phObs == 48,
+                        "wall depth: the deep chamfered poly bakes its OWN g density "
+                                + "(expected 73x48, got " + pwObs + "x" + phObs
+                                + " — 81x54 = the legacy fixed-ppu path)");
+            }
+        } finally {
+            GalleryPack.setQuadDir(null);
+            GalleryPack.resetJarCache();
+            ObjMesh.resetBaker();
+            GalleryPack.resetModelScales();
+            deleteRecursively(root);
         }
     }
 
