@@ -504,7 +504,6 @@ final class ObjMesh {
             if (!el.has(POLY)) {
                 continue;
             }
-            // (the per-element walk; the snap census prints after the loop)
             JsonObject poly = el.getAsJsonObject(POLY);
             String ref = poly.get("tex").getAsString();
             String sprite = textures.get(ref.startsWith("#") ? ref.substring(1) : ref);
@@ -517,29 +516,12 @@ final class ObjMesh {
             cell.y = at[2];
             cell.replace(key, Baker.SIZE, Baker.SIZE);
         }
-        if (wallChannel && (snapTried > 0 || !snapGates.isEmpty())) {
-            warnings.add("obj: tile-snap wall-channel census tried=" + snapTried
-                    + " fired=" + snapFired + " gates=" + snapGates);
-        }
     }
 
     private static final Baker BAKER = new Baker();
 
     static void resetBaker() {
         BAKER.reset();
-        snapTried = 0;
-        snapFired = 0;
-        snapGates = new java.util.TreeMap<>();
-    }
-
-    // 14-e283 the snap's flight instrumentation: the gate census rides the
-    // pack build's warnings so the seed log names WHY a wall poly fell back
-    static int snapTried;
-    static int snapFired;
-    static java.util.TreeMap<String, Integer> snapGates = new java.util.TreeMap<>();
-
-    private static void snapGate(String why) {
-        snapGates.merge(why, 1, Integer::sum);
     }
 
     static int tileHashCollisions() {
@@ -716,16 +698,8 @@ final class ObjMesh {
             }
             n = normal(vs);
             double[] e = sub(pts[1], pts[0]);
-            double[] exF = scale(e, 1 / Math.max(len(e), 1e-9));
-            double[] eyF = cross(n, exF);
-            // 14-e284 THE WALL FRAME OVERRIDE MEASURED NEGATIVE and is
-            // reverted: the #639 flight's per-cell diff (1230 -> 1413, bop
-            // +75 / create +40 / supp +41) — the world-frame bbox + the
-            // identity rotation moved the rendered rect the e278 phase law
-            // was NOT fitted on. The polygon's own frame stays; the v2 snap
-            // below scales the rect about its CENTRE (the phase anchor).
-            ex = exF;
-            ey = eyF;
+            ex = scale(e, 1 / Math.max(len(e), 1e-9));
+            ey = cross(n, ex);
             double aMin = Double.MAX_VALUE;
             double aMax = -Double.MAX_VALUE;
             double bMin = Double.MAX_VALUE;
@@ -774,29 +748,12 @@ final class ObjMesh {
             int pwSnap = 0;
             int phSnap = 0;
             boolean snapped = false;
-            snapTried++;
-            if (!wallChannel) {
-                snapGate("channel");
-            } else if (Math.abs(n[2]) <= 0.999) {
-                snapGate("nz");
-            } else {
+            if (wallChannel && Math.abs(n[2]) > 0.999
+                    && Math.abs(ex[0]) > 0.999 && Math.abs(ey[1]) > 0.999
+                    && Math.abs(ex[1]) < 1e-3 && Math.abs(ey[0]) < 1e-3) {
                 final double mzPlane = n[2] * dot(pts[0], n);
                 final double zw = WALL_CONTENT_Z + (16.0 - mzPlane) / 16.0;
-                if (zw - WALL_CAM_Z <= 1.0) {
-                    snapGate("depth");
-                }
                 if (zw - WALL_CAM_Z > 1.0) {
-                    // 14-e285 v2 THE CENTRE-PRESERVING SNAP: the projected
-                    // span of the polygon's own bbox = |J|*span px (fractional);
-                    // the tile = the pixels that span actually covers
-                    // (floor..ceil), and the element rect scales about the
-                    // bbox CENTRE to span'/J = pw px exactly — texel==pixel
-                    // 1:1 with the rect's centre (the e278 phase anchor)
-                    // UNMOVED, so the landed per-cell phase law stays fitted.
-                    // The growth rides into the transparent margins (<= 1 px
-                    // per side, the cutout discards = the native not-covered
-                    // rule). The polygon's own frame rides (the #639
-                    // world-frame reframe measured NEGATIVE and is reverted).
                     final double g = WALL_F_PX / ((zw - WALL_CAM_Z) * 16.0);
                     final double jx = -g;
                     final double jy = -g;
@@ -807,20 +764,13 @@ final class ObjMesh {
                     final int wSpan = x1 - x0;
                     final int hSpan = y1 - y0;
                     if (wSpan >= 2 && wSpan <= 184 && hSpan >= 2 && hSpan <= 184) {
-                        double aMid = (aMin + aMax) / 2;
-                        double bMid = (bMin + bMax) / 2;
-                        double aHalf = (wSpan / jx) / 2;
-                        double bHalf = (hSpan / jy) / 2;
-                        aLo = Math.min(aMid - aHalf, aMid + aHalf);
-                        aHi = Math.max(aMid - aHalf, aMid + aHalf);
-                        bLo = Math.min(bMid - bHalf, bMid + bHalf);
-                        bHi = Math.max(bMid - bHalf, bMid + bHalf);
+                        aLo = Math.min(x0 / jx, x1 / jx);
+                        aHi = Math.max(x0 / jx, x1 / jx);
+                        bLo = Math.min(y0 / jy, y1 / jy);
+                        bHi = Math.max(y0 / jy, y1 / jy);
                         pwSnap = wSpan;
                         phSnap = hSpan;
                         snapped = true;
-                        snapFired++;
-                    } else {
-                        snapGate("cap");
                     }
                 }
             }
