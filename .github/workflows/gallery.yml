@@ -4719,7 +4719,7 @@ jobs:
             grep -v '^0$' "$PJ_DIR"/*.rc 2>/dev/null | head -5 || true
           }
           echo "=== SM mesh-replay joins (diagnostic, never gates) ==="
-          for M in $(find truth-meta/srv-wall/c-imagine/scenes -name "gallery-*-p*.tsv" 2>/dev/null | grep -vE "biome|blockiso|-item-|-entity-|-particle-|-sound-|-inv-|-gui-|variant-" | sort -V); do
+          for M in $(find truth-meta/srv-wall/c-imagine/scenes -name "gallery-*-p*.tsv" 2>/dev/null | grep -vE "biome|blockiso|-item-|-entity-|-particle-|-sound-|-inv-|-gui-|variant-|dimension|entitydyn|entitylarge|fluid" | sort -V); do
             B=$(basename "$M" .tsv); NS=${B#gallery-}; p=${NS##*-p}; NS=${NS%-p*}
             T="truth-shots/gal-p-$NS$p.png"
             O="ours-shots/ours-gal-p-$NS$p.png"
@@ -4737,6 +4737,19 @@ jobs:
           done
           pjoin_wait
           echo "sm joins written: $(ls gallery-report-sm/join-sm-*.json 2>/dev/null | wc -l)"
+          # the first-flight diagnostic (measured #651: 5 rc=1 joins wrote 0
+          # files and the stderr rode /tmp/pj-sm/*.log unprinted — the runner
+          # cleaned it; the failing joins' own logs must reach the receipt)
+          for L in /tmp/pj-sm/*.log; do
+            if [ -f "$L" ] && [ -s "$L" ]; then
+              RC_FILE="${L%.log}.rc"
+              if [ -f "$RC_FILE" ] && ! grep -q '^0$' "$RC_FILE"; then
+                echo "--- FAILED $L (rc=$(cat "$RC_FILE")) ---"
+                tail -5 "$L"
+              fi
+            fi
+          done
+          echo "manifests considered: $(find truth-meta/srv-wall/c-imagine/scenes -name 'gallery-*-p*.tsv' 2>/dev/null | wc -l)"; echo "block shots present: $(ls ours-shots/ours-gal-p-*.png 2>/dev/null | wc -l) truth shots present: $(ls truth-shots/gal-p-*.png 2>/dev/null | wc -l)"
       # [the CLIENT RUNTIME = THE TRUTH-CLIENT PIVOT (measured 44919207515:
       # the 26.3 client cannot complete a NeoForge 1.21.1 login — the
       # protocol gap is structural): the nfc + truth-client runtime trio =
