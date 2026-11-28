@@ -449,6 +449,28 @@ def _f3(v):
     return [round(float(c), 1) for c in v]
 
 
+
+def _reply_dict(r):
+    """A ctl reply as a dict: a JSON string is parsed (horizon-ctl can answer with the JSON text as a str);
+    anything that is still not an object becomes {} so callers can read keys without crashing."""
+    if isinstance(r, str):
+        try:
+            r = json.loads(r)
+        except json.JSONDecodeError:
+            return {"raw": r}
+    return r if isinstance(r, dict) else {}
+
+
+
+def _motion_changed(before, after, eps=0.05):
+    """True when position or velocity moved between two motion() readings (None entries count as unchanged)."""
+    for k in ("position", "velocity"):
+        a, b = (before or {}).get(k), (after or {}).get(k)
+        if a and b and any(abs(x - y) > eps for x, y in zip(a, b)):
+            return True
+    return False
+
+
 def _target_pos_face(t):
     """Block [x, y, z] and lower-case face name from a state 'target' dict; (None, None) when absent."""
     if not isinstance(t, dict):
@@ -1481,6 +1503,8 @@ class OursStack(Stack):
         view = state.get("player") if isinstance(state.get("player"), dict) else state
         yaw0, pitch0 = float(view["yaw"]), float(view["pitch"])
         dyaw, dpitch = keyboard_layout.aim_deltas(*keyboard_layout.cap_aim_point(code))
+        before = self.motion()
+        after = before
         self.ctl("command", "keyboard")
         try:
             self.ctl("wait", 4)  # the HUD and the camera lock come up
@@ -1488,11 +1512,18 @@ class OursStack(Stack):
             self.ctl("wait", 3)  # the pointer follows the look on each HUD frame
             self.ctl("mouse", "left", "click")
             self.ctl("wait", 5)  # the key press reaches the server as a VirtualKeyEvent
+            after = self.motion()  # the effect of a movement key (a roll) shows in position or velocity
         finally:
             self.ctl("command", "keyboard")  # /keyboard toggles: closes the open keyboard and releases the view
             self.ctl("wait", 3)
             self.ctl("look", "%.4f" % yaw0, "%.4f" % pitch0)
-        return {"pressed": True, "ticks": 1}
+        moved = _motion_changed(before, after)
+        out = {"pressed": moved, "ticks": 1, "effect": {"before": before, "after": after}}
+        if not moved:
+            out["reason"] = ("no position or velocity change within 5 ticks of the click: the keycap was not "
+                             "hit, the key was not delivered, or the mod refused the action (see the server's "
+                             "[cim-key] lines)")
+        return out
 
     def motion(self):
         r = self.ctl("state")
@@ -1546,7 +1577,7 @@ class OursStack(Stack):
 
     def observe_inventory(self, fields=None):
         asked = norm_durability_fields(fields)
-        raw = self.ctl("inventory")
+        raw = _reply_dict(self.ctl("inventory"))  # horizon-ctl may print a JSON string: parse it, else guard
         self._inv_raw = raw  # client-side reply: the only place durability is reported (see norm_durability)
         slots = self._server_inv()
         carried = raw.get("carried")

@@ -269,6 +269,19 @@ class TranslateTests(unittest.TestCase):
 
 
 class KeyTests(unittest.TestCase):
+    def test_motion_changed_reads_position_or_velocity(self):
+        still = {"position": [1.0, 2.0, 3.0], "velocity": [0.0, 0.0, 0.0]}
+        self.assertFalse(stacks._motion_changed(still, dict(still)))
+        self.assertTrue(stacks._motion_changed(still, {"position": [1.0, 2.0, 3.5], "velocity": [0.0, 0.0, 0.0]}))
+        self.assertTrue(stacks._motion_changed(still, {"position": [1.0, 2.0, 3.0], "velocity": [0.4, 0.0, 0.0]}))
+        self.assertFalse(stacks._motion_changed({"position": None, "velocity": None}, still))
+
+    def test_reply_dict_parses_json_text_and_guards_non_objects(self):
+        self.assertEqual(stacks._reply_dict('{"carried": null}'), {"carried": None})
+        self.assertEqual(stacks._reply_dict({"a": 1}), {"a": 1})
+        self.assertEqual(stacks._reply_dict("not json"), {"raw": "not json"})
+        self.assertEqual(stacks._reply_dict(["x"]), {})
+
     def test_vanilla_key_is_unchanged(self):
         st, log = ours_stack()
         st.key("key.jump", 1)
@@ -282,10 +295,13 @@ class KeyTests(unittest.TestCase):
     def test_keyboard_tap_for_combat_roll(self):
         st, log = ours_stack({"state": {"yaw": 10.0, "pitch": 5.0}})
         out = st.key("keybinds.combat_roll.roll", 1)
-        self.assertEqual(out, {"pressed": True, "ticks": 1})
+        # the state reply carries no position/velocity here, so nothing is seen to move: not pressed, with a reason
+        self.assertFalse(out["pressed"])
+        self.assertIn("reason", out)
         dyaw, dpitch = kl.aim_deltas(*kl.cap_aim_point(82))
         self.assertEqual(log.calls[0], ("state",))
-        self.assertEqual(log.calls[1], ("command", "keyboard"))
+        self.assertEqual(log.calls[1], ("state",))  # motion() before the tap
+        self.assertEqual(log.calls[2], ("command", "keyboard"))
         self.assertIn(("mouse", "left", "click"), log.calls)
         look = [c for c in log.calls if c[0] == "look"]
         self.assertEqual(look[0], ("look", "%.4f" % (10.0 + dyaw), "%.4f" % (5.0 + dpitch)))
