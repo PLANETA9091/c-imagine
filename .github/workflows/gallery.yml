@@ -4692,6 +4692,51 @@ jobs:
         with:
           name: wall-truth-meta-${{ matrix.shard }}
           path: truth-meta
+      # THE SM MESH-REPLAY JOIN (report-only first flight, the e289 receipt's
+      # named instrument): the route-1 lane renders the pack DIRECTLY — the
+      # e281 killer fact measured the same mesh at ae=46 on this lane vs
+      # 84,144 through the tile lane — the per-page joins land in
+      # gallery-report-sm/ so the verdict can census the tile-vs-mesh delta
+      # per family (the promotion evidence the flip law needs). Never gates;
+      # pjoin 0 = the shard gate stays blind to this lane.
+      - name: sm mesh-replay joins (diagnostic)
+        run: |
+          set -uo pipefail
+          mkdir -p gallery-report-sm /tmp/pj-sm
+          PJ_DIR=/tmp/pj-sm; PJ_SEQ=0; PJ_RUN=0; PJ_MAX=4
+          pjoin() { # the ours lane's pool worker, diagnostic-only here
+            local gated="$1"; shift
+            PJ_SEQ=$((PJ_SEQ+1))
+            local id; id=$(printf '%05d' "$PJ_SEQ")
+            while [ "$PJ_RUN" -ge "$PJ_MAX" ]; do wait -n || true; PJ_RUN=$((PJ_RUN-1)); done
+            echo "$gated" > "$PJ_DIR/$id.gated"
+            ( if env OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 "$@" > "$PJ_DIR/$id.log" 2>&1; then echo 0; else echo $?; fi > "$PJ_DIR/$id.rc" ) &
+            PJ_RUN=$((PJ_RUN+1))
+          }
+          pjoin_wait() {
+            wait || true
+            PJ_RUN=0
+            grep -v '^0$' "$PJ_DIR"/*.rc 2>/dev/null | head -5 || true
+          }
+          echo "=== SM mesh-replay joins (diagnostic, never gates) ==="
+          for M in $(find truth-meta/srv-wall/c-imagine/scenes -name "gallery-*-p*.tsv" 2>/dev/null | grep -vE "biome|blockiso|-item-|-entity-|-particle-|-sound-|-inv-|-gui-|variant-" | sort -V); do
+            B=$(basename "$M" .tsv); NS=${B#gallery-}; p=${NS##*-p}; NS=${NS%-p*}
+            T="truth-shots/gal-p-$NS$p.png"
+            O="ours-shots/ours-gal-p-$NS$p.png"
+            if [ -f "$T" ] && [ -f "$O" ]; then
+              ANIM=""
+              [ -f "srv-wall/c-imagine/f2v/visual-gallery-animation.tsv" ] && \
+                ANIM="--gate-dyn --anim-floor 1000 --animated-states srv-wall/c-imagine/f2v/visual-gallery-animation.tsv"
+              pjoin 0 python3 scripts/cimscene/gallery-diff.py --truth "$T" --ours "$O" \
+                --manifest "$M" $ANIM \
+                --out "gallery-report-sm/join-sm-$NS-p$p.json" \
+                --pitch 2
+            else
+              echo "sm join $NS p$p shots missing (diagnostic tolerated)"
+            fi
+          done
+          pjoin_wait
+          echo "sm joins written: $(ls gallery-report-sm/join-sm-*.json 2>/dev/null | wc -l)"
       # [the CLIENT RUNTIME = THE TRUTH-CLIENT PIVOT (measured 44919207515:
       # the 26.3 client cannot complete a NeoForge 1.21.1 login — the
       # protocol gap is structural): the nfc + truth-client runtime trio =
@@ -4734,6 +4779,94 @@ jobs:
   # RED unless ALL shards reported green AND every class walked to
   # exhaustion. A missing shard report is RED — a hole in the wall is not a
   # green verdict.
+  sm-census:
+    name: sm mesh-replay census (report-only, the tile-vs-mesh promotion evidence)
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [wall-ours, wall-ours-sm]
+    steps:
+      - uses: actions/checkout@v4
+      - name: download the sm lane's meta (the join-sm files)
+        uses: actions/download-artifact@v4
+        with:
+          pattern: wall-ours-sm-meta-*
+          path: sm-meta
+      - name: download the tile lane's reports (the comparison side)
+        uses: actions/download-artifact@v4
+        with:
+          pattern: gallery-report-*
+          path: reports
+      - name: the per-family tile-vs-mesh census
+        if: always()
+        run: |
+          pip install -q numpy pillow
+          mkdir -p sm-census
+          python3 - <<'PY'
+          import glob, json, collections
+          # THE TILE-VS-MESH CENSUS (the e289 named instrument): per family,
+          # the tile lane's red-row census vs the sm mesh-replay lane's —
+          # the e281 killer fact (the same mesh ae=46 on the mesh lane vs
+          # 84,144 on the tile lane) turned into a standing measurement.
+          # The families where the mesh lane collapses while the tile lane
+          # burns = the promotion evidence the flip law needs. Report-only:
+          # this job never gates, its rc = 0 always.
+          fam = collections.defaultdict(lambda: {"tile_red": 0, "mesh_red": 0,
+                                                 "tile_ae_sum": 0, "mesh_ae_sum": 0})
+          tile_pages = mesh_pages = 0
+          for f in glob.glob('reports/*/join-*.json'):
+              base = f.rsplit('/', 1)[-1]
+              if not base.startswith('join-') or base.startswith('join-sm-'):
+                  continue
+              try:
+                  r = json.load(open(f))
+              except Exception:
+                  continue
+              tile_pages += 1
+              for row in r.get('rows', []):
+                  if row.get('verdict') == 'RED':
+                      k = str(row.get('state', '?')).split('[')[0]
+                      fam[k]["tile_red"] += 1
+                      fam[k]["tile_ae_sum"] += int(row.get('ae') or 0)
+          for f in glob.glob('sm-meta/*/gallery-report-sm/join-sm-*.json'):
+              try:
+                  r = json.load(open(f))
+              except Exception:
+                  continue
+              mesh_pages += 1
+              for row in r.get('rows', []):
+                  if row.get('verdict') == 'RED':
+                      k = str(row.get('state', '?')).split('[')[0]
+                      fam[k]["mesh_red"] += 1
+                      fam[k]["mesh_ae_sum"] += int(row.get('ae') or 0)
+          rows = sorted(fam.items(), key=lambda kv: -(kv[1]["tile_red"] + kv[1]["mesh_red"]))
+          out = {
+              "schema": "sm-census-v1",
+              "status": "REPORT-ONLY — the promotion evidence, never gates",
+              "tile_pages": tile_pages, "mesh_pages": mesh_pages,
+              "families": [
+                  {"family": k, **v, "mesh_share": round(
+                      v["mesh_red"] / max(1, v["tile_red"] + v["mesh_red"]), 3)}
+                  for k, v in rows[:120]
+              ],
+          }
+          json.dump(out, open('sm-census/sm-census.json', 'w'), indent=1)
+          print(f"{'family':46s} {'tile_red':>8s} {'mesh_red':>8s} {'mesh_share':>10s}")
+          for k, v in rows[:30]:
+              print(f"{k:46s} {v['tile_red']:8d} {v['mesh_red']:8d} "
+                    f"{v['mesh_red']/max(1,v['tile_red']+v['mesh_red']):10.3f}")
+          t_tile = sum(v["tile_red"] for v in fam.values())
+          t_mesh = sum(v["mesh_red"] for v in fam.values())
+          print(f"TOTAL tile_red={t_tile} mesh_red={t_mesh}")
+          PY
+      - name: upload the sm census
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sm-census
+          path: sm-census/
+          if-no-files-found: warn
+
   wall-verdict:
     name: gallery verdict (coverage gate + shard gates)
     if: ${{ always() }}
