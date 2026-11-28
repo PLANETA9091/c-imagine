@@ -3757,8 +3757,11 @@ public final class F2vPack {
                         + " (referenced by " + modelPath + ")");
             }
         } else if (parent == null) {
-            warnings.add("model without parent: " + modelPath
-                    + " (must extend a vanilla or in-jar model)");
+            // VANILLA RULE: a model with no parent is STANDALONE — its own
+            // elements are the geometry (ModelBakery bakes it as-is). Nothing
+            // to copy upward, so no warning. A parentless model with NO
+            // elements (FD canvas_sign: textures only) renders no block quads
+            // in vanilla either; its look comes from the block entity.
         }
         // textures owned by a modded namespace get copied into the pack
         Map<String, String> textures = extractTextures(json);

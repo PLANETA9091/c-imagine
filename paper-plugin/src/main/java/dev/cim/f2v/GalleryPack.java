@@ -4653,6 +4653,11 @@ public final class GalleryPack {
         }
     }
 
+    /** True for the vanilla built-in model markers ({@code builtin/generated}, {@code builtin/entity}...). */
+    static boolean isBuiltinModel(String path) {
+        return path != null && path.startsWith("builtin/");
+    }
+
     /**
      * Walk the parent chain across ALL jars (mods first, the vanilla client
      * jar last): textures merge child-over-parent, elements come from the
@@ -4692,6 +4697,14 @@ public final class GalleryPack {
                 hopPath = cur;
             }
             ns = hopNs;
+            if (isBuiltinModel(hopPath)) {
+                // VANILLA BUILT-IN (builtin/generated, builtin/entity, ...):
+                // the game synthesizes these in code, they are NOT jar files.
+                // The chain ends here silently (item/generated = no elements,
+                // the flat layer0 path) — the 624 "model missing" warnings
+                // were this marker, not a lookup failure.
+                break;
+            }
             String file = "assets/" + hopNs + "/models/" + hopPath + ".json";
             JsonObject json = readJsonFromJars(jars, file);
             if (json == null && !hopNs.equals("minecraft")) {
