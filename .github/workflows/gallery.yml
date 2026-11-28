@@ -793,14 +793,21 @@ jobs:
                   out = f'srv-wall/c-imagine/scenes/gallery-inv-{ns}-p{pi // chunk}.tsv'
                   with open(out, 'w', encoding='utf-8') as f:
                       f.write('slot\titem\n')
-                      for i, item in enumerate(ordered[pi:pi + chunk]):
-                          # 14-eb the relabeled vanilla semantics (the #302
-                          # law): 0..8 = hotbar.N, 9..35 = the vanilla main
-                          # slots inventory.(i-9) — the raw-Bukkit
-                          # inventory.9..35 names overflowed the plugin's
-                          # Bukkit range (9 dropped slots, placed=27 of 36)
-                          # AND the truth's vanilla `item replace` rejects
-                          # inventory.27+ (the main slots are 0..26)
+                      # 14-e275 THE TURN-OVER LAW: the manifest names ALL 36
+                      # slots every page — slice-rows-only left the unlisted
+                      # slots carrying the PREVIOUS page's items on BOTH legs
+                      # (the e272 stale-inventory receipt: ae2-p10 ≡ bop-p10
+                      # at 32/36 slots). minecraft:air rows name the empty
+                      # slots explicitly; the truth's rcon `item replace ...
+                      # with minecraft:air` empties the slot, ours' carrier
+                      # fill clears it — the inventory turns over fully on
+                      # every page, symmetrically.
+                      # 14-eb the relabeled vanilla semantics (the #302
+                      # law): 0..8 = hotbar.N, 9..35 = the vanilla main
+                      # slots inventory.(i-9) — the raw-Bukkit names
+                      # overflowed both legs' slot semantics (#302).
+                      for i in range(36):
+                          item = ordered[pi + i] if pi + i < len(ordered) else 'minecraft:air'
                           slot = f'hotbar.{i}' if i < 9 else f'inventory.{i - 9}'
                           f.write(f'{slot}\t{item}\n')
                   n += 1
@@ -2244,6 +2251,31 @@ jobs:
                 || echo "$NS biome page $p shot failed (diagnostic tolerated)"
             done
             [ "$EX" = "1" ] || { echo "$NS biome walk hit the MAXP cap without exhausted"; exit 1; }
+          done
+          # DIMENSION walk (per ladder ns, to exhaustion — DIAGNOSTIC
+          # class, 14-e283): ONE dimension type per page, the per-dimension
+          # camera rig — the scene builds the 3x3 vantage platform INSIDE
+          # the target level and teleports the viewer in; the shot = the
+          # dimension's own render from 8 blocks out. The viewer comes
+          # back to the wall rig after the shot (the next class' walk
+          # needs the wall framing). The ours leg has no dimension
+          # projection channel — DIAG-INCOMPLETE reports loudly, never
+          # reds (the flip = the x2 stability law's precondition).
+          for NS in $LADDER_NS; do
+            EX=0
+            for p in $(seq $SI $K $MAXP); do
+              base_of "gallery-dimension-$NS-p$p"
+              rcon "cimscene gallery dimension $NS $p"
+              RC=0; wait_done "gallery-dimension-$NS-p$p" "$V0D" "$V0E" || RC=$?
+              [ "$RC" = "2" ] && { echo "$NS dimension page $p no done marker"; tail -10 srv-wall/boot.log; exit 1; }
+              if [ "$RC" = "1" ]; then EX=1; break; fi
+              grep "gallery-dimension done ns=$NS page=$p " srv-wall/boot.log | tail -1 || true
+              sleep 3   # the dimension switch + chunk sync (fixed window)
+              bash scripts/visual/shot.sh "truth-shots/gal-dim-$NS$p.png" \
+                || echo "$NS dimension page $p shot failed (diagnostic tolerated)"
+              rcon "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
+            done
+            [ "$EX" = "1" ] || { echo "$NS dimension walk hit the MAXP cap without exhausted"; exit 1; }
           done
           # INVENTORY walk (per ladder ns, to exhaustion — DIAGNOSTIC class,
           # round 2): the scene writes ONLY the manifest (slot -> ns:id, 36

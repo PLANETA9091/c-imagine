@@ -128,6 +128,58 @@ class ChannelSwapAudit(unittest.TestCase):
             self.assertFalse(rows["thing[c0]"]["swap_flag"])
             self.assertIn(rows["thing[c0]"]["swap_ratio"], (None, 1.0))
 
+    def test_pixel_swap_audit_catches_the_mean_invisible_case(self):
+        # 14-e280 THE PIXEL AUDIT: ours = a two-half red/blue sprite, truth =
+        # the same sprite R/B-exchanged, the capture = ours' own mean
+        # ((127,0,127) — R == B, so the MEAN exchange is a no-op and the
+        # mean metric reads ratio ~1 while the pair fits (MATCH)). The
+        # per-pixel exchange maps ours onto the truth EXACTLY (ratio ~0) —
+        # the pixel audit flags what the mean metric structurally cannot.
+        # Also proves the mean-flag zone's dispatch reading: the two metrics
+        # separate (the mask artifact flags means, never pixels).
+        with tempfile.TemporaryDirectory() as root:
+            build_tree(root, [(127, 0, 127, 255)], capture=(127, 0, 127, 255))
+            from PIL import Image
+            rd = os.path.join(root, "reports", "gallery-report-0")
+            dd = os.path.join(rd, "diff-0")
+            ours = Image.new("RGBA", (8, 8))
+            truth = Image.new("RGBA", (8, 8))
+            for x in range(8):
+                for y in range(8):
+                    if x < 4:
+                        ours.putpixel((x, y), (255, 0, 0, 255))
+                        truth.putpixel((x, y), (0, 0, 255, 255))
+                    else:
+                        ours.putpixel((x, y), (0, 0, 255, 255))
+                        truth.putpixel((x, y), (255, 0, 0, 255))
+            ours.save(os.path.join(dd, "gallery-test-p0_c0_r0_ours.png"))
+            truth.save(os.path.join(dd, "gallery-test-p0_c0_r0_truth.png"))
+            p, d = run_tool(root)
+            self.assertEqual(p.returncode, 0, p.stderr)
+            rows = {r["state"]: r for r in d["rows"]}
+            r0 = rows["thing[c0]"]
+            # the mean metric: the pair fits, the exchange cannot help (R==B)
+            self.assertEqual(r0["class"], "MATCH")
+            self.assertIn(r0["swap_ratio"], (None, 1.0))
+            self.assertFalse(r0["swap_flag"])
+            # the pixel metric: the exchange kills the aligned error
+            ps = d["pixel_swap"]
+            self.assertEqual(ps["pairs"], 1)
+            self.assertEqual(ps["flagged"], 1)
+            self.assertTrue(r0["pixel_flag"])
+            self.assertLessEqual(r0["pixel_ratio"], 0.5)
+            self.assertGreaterEqual(r0["pixel_mae"], 2.0)
+
+    def test_pixel_swap_audit_skips_when_no_truth_crop(self):
+        # the existing fixtures carry no _truth.png: the pixel audit degrades
+        # honestly (0 pairs), the mean audit unchanged — the additive law.
+        with tempfile.TemporaryDirectory() as root:
+            build_tree(root, [(40, 120, 200, 255)])
+            p, d = run_tool(root)
+            self.assertEqual(p.returncode, 0, p.stderr)
+            self.assertEqual(d["pixel_swap"]["pairs"], 0)
+            self.assertEqual(d["channel_swap"]["flagged"], 1)
+
 
 if __name__ == "__main__":
     unittest.main()

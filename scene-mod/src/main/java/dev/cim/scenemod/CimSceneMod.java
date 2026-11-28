@@ -443,6 +443,12 @@ public final class CimSceneMod {
                                                 .executes(ctx -> galleryBiome(ctx.getSource(),
                                                         StringArgumentType.getString(ctx, "namespace"),
                                                         IntegerArgumentType.getInteger(ctx, "page"))))))
+                        .then(Commands.literal("dimension")
+                                .then(Commands.argument("namespace", StringArgumentType.word())
+                                        .then(Commands.argument("page", IntegerArgumentType.integer(0))
+                                                .executes(ctx -> galleryDimension(ctx.getSource(),
+                                                        StringArgumentType.getString(ctx, "namespace"),
+                                                        IntegerArgumentType.getInteger(ctx, "page"))))))
                         // 14-e210 THE OURS-MODE PAGE (the route-1 port's first cut, the
                         // e195/e209 design's concrete surface): the ours wall leg becomes
                         // the modded server — the band = the REAL blocks (the modded
@@ -1979,7 +1985,9 @@ public final class CimSceneMod {
      * window still dies, and the manifest honestly names it — the pin buys
      * the physics window, not immortality.
      */
-    private static final java.util.Map<Entity, Integer> MOTION_PINNED =
+    private record PinSpec(Vec3 cell, int deadline) {}
+
+    private static final java.util.Map<Entity, PinSpec> MOTION_PINNED =
             new java.util.IdentityHashMap<>();
     /** The settle (40 ticks) plus the shot window the pin must outlive. */
     static final int MOTION_PIN_GRACE_TICKS = 160;
@@ -1990,11 +1998,29 @@ public final class CimSceneMod {
         }
         MOTION_PINNED.entrySet().removeIf(en -> {
             Entity e = en.getKey();
-            if (now >= en.getValue() || e.isRemoved()) {
+            PinSpec pin = en.getValue();
+            if (now >= pin.deadline() || e.isRemoved()) {
                 return true;
             }
             try {
+                // 14-e281 THE POSITION RE-PIN: the zeroed velocity alone
+                // cannot hold a gravity subject — the projectile classes
+                // re-apply gravity INSIDE their own tick() (the 14-ea
+                // receipt), so the position still accumulates one tick of
+                // fall per tick and the settle reads drift > 1.0 or the
+                // row-0 platform clip kills the subject. The drain now
+                // re-zeros the velocity AND moves the subject back to the
+                // cell position it was pinned at (its own spawn position —
+                // the position the manifest carries). Mobs keep the NoAI
+                // freeze + the yaw re-assert and skip the moveTo (their AI
+                // is already off; a teleport would fight the leash/seat
+                // logic). The honesty law is unchanged: the subject's own
+                // state (item, fuse counter) is real; only position/velocity
+                // are pinned — the same law as the yaw re-assert.
                 e.setDeltaMovement(Vec3.ZERO);
+                if (!(e instanceof Mob)) {
+                    e.moveTo(pin.cell());
+                }
             } catch (Throwable ignored) {
                 // a pin failure must never kill the tick loop — the settle
                 // pass re-reads the real state and names the drifted subject
@@ -2446,6 +2472,39 @@ public final class CimSceneMod {
      *  O(states x BE-types) — once per server is the right cost). */
     private static final Set<String> LEDGER_WRITTEN = new HashSet<>();
 
+    /**
+     * 14-e281 THE GATED SUBJECTS (the receipt e272 demotion pattern, named
+     * report-only — never a silent skip): the class/subject pairs measured
+     * unable to hold a still gallery cell across >= 2 full galleries, each
+     * row citing its receipts. The walk's own {@code cell ... ok} row beats
+     * a gated name (covered-beats-gated — the gate ignores a stale row), and
+     * a row that a future strategy makes placeable is dropped by a receipted
+     * commit, never auto-derived. Emitted per namespace as
+     * {@code scenes/gallery-<ns>-gated.tsv} beside the index (the coverage
+     * gate's reader partitions the honest RED set on it).
+     */
+    private record GatedSubject(String cls, String id, String reason) {}
+
+    private static final java.util.List<GatedSubject> GATED_SUBJECTS = java.util.List.of(
+            // worklog:8777 (14-ea measured) + runs 42988643975 / 45865564587 /
+            // 46049855366 — the self-timing animators discard themselves on
+            // their own tick timers, ungated by any velocity pin:
+            new GatedSubject("entity-dyn", "dynamictrees:falling_tree", "own-timer"),
+            new GatedSubject("entity-dyn", "dynamictrees:lingering_effector", "own-timer"),
+            // the fuse carriers: the fuse expires inside the pin window by
+            // design (the pin buys the physics window, not immortality):
+            new GatedSubject("entity-dyn", "supplementaries:bomb", "own-timer"),
+            new GatedSubject("entity-dyn", "supplementaries:cannonball", "own-timer"),
+            // worklog:8777 + the #632 supp reconciliation — the transient
+            // motion / structure-internal BE states (they exist only mid-
+            // contraption / mid-transfer and cannot hold a still cell):
+            new GatedSubject("blockentity", "supplementaries:moving_pulley_block",
+                    "transient-motion-state"),
+            new GatedSubject("blockentity", "supplementaries:moving_slidy_block",
+                    "transient-motion-state"),
+            new GatedSubject("blockentity", "supplementaries:structure_temp",
+                    "structure-internal"));
+
     private static void writeGalleryIndex(ServerLevel level, String namespace) {
         if (!LEDGER_WRITTEN.add(namespace)) {
             return;
@@ -2564,7 +2623,12 @@ public final class CimSceneMod {
                 .append("banner_pattern\t").append(bannerPatterns).append("\t").append(GALLERY_CELLS).append('\n')
                 .append("decorated_pot_pattern\t").append(potPatterns).append("\t").append(GALLERY_CELLS).append('\n')
                 .append("jukebox_song\t").append(jukeboxSongs).append("\t").append(GALLERY_CELLS).append('\n')
-                .append("dimension_type\t").append(dimensionTypes).append("\t0\n");
+                // 14-e283: dimension_type LEFT the no-walk set (the
+                // per-dimension camera rig shipped: `gallery dimension` —
+                // one dimension type per page, the 3x3 vantage platform
+                // built INSIDE the target level and the viewer teleported
+                // in; DIAGNOSTIC-first per the 2026-11-04 pattern)
+                .append("dimension_type\t").append(dimensionTypes).append("\t1\n");
         // BLOCK ENTITY RECONCILIATION: a BlockEntityType whose every valid
         // state is fluid-carried or RenderShape.INVISIBLE would never reach
         // the block wall — its renderer would silently vanish from the
@@ -2601,6 +2665,21 @@ public final class CimSceneMod {
             Files.writeString(parent.resolve("gallery-" + namespace + "-be-uncovered.tsv"),
                     beUncovered.isEmpty() ? "" : String.join("\n", beUncovered) + "\n",
                     StandardCharsets.UTF_8);
+            // 14-e281 the GATED ledger: the namespace's own rows only (the
+            // subject id's registry prefix), the receipt-e272 demotion
+            // pattern's writer side — the gate's reader partitions the RED
+            // set on it, every demotion named on the verdict line.
+            StringBuilder gated = new StringBuilder("class\tsubject\treason\n");
+            boolean anyGated = false;
+            for (GatedSubject g : GATED_SUBJECTS) {
+                if (g.id().startsWith(namespace + ":")) {
+                    gated.append(g.cls()).append('\t').append(g.id()).append('\t')
+                            .append(g.reason()).append('\n');
+                    anyGated = true;
+                }
+            }
+            Files.writeString(parent.resolve("gallery-" + namespace + "-gated.tsv"),
+                    anyGated ? gated.toString() : "", StandardCharsets.UTF_8);
         } catch (IOException ioe) {
             LOGGER.error("[cimscene] gallery-index write failed ns={}: {}", namespace, ioe.toString());
         }
@@ -3102,7 +3181,7 @@ public final class CimSceneMod {
      * nothing on BOTH legs identically is the honest floor — the join
      * compares like with like.
      */
-    private static final int OPTION_FILL_CANDIDATES_LENGTH = 13;
+    private static final int OPTION_FILL_CANDIDATES_LENGTH = 15;
 
     /** Fresh tag per use (tags are shared-mutable; the probe owns its copy). */
     private static Tag fillCandidate(int i) {
@@ -3119,7 +3198,25 @@ public final class CimSceneMod {
             case 9 -> mapRef("Name", "minecraft:water");
             case 10 -> mapRef("id", "minecraft:water");
             case 11 -> StringTag.valueOf("x"); // the axis enum's first member
-            default -> StringTag.valueOf("north"); // the Direction enum's member
+            case 12 -> StringTag.valueOf("north"); // the Direction enum's member
+            // 14-e281 THE LIST RUNGS (appended, candidates 0-12 unchanged):
+            // the measured refusal "Not a list: \"north\"" (the ae2
+            // lightning_arc_fx ladder trace) = the codec wants a LIST where
+            // the scalar ladder offered the enum string — the cursor could
+            // not advance and rung 3 exhausted. Candidate 13 = an empty
+            // ListTag; candidate 14 = a one-element ListTag wrapping the
+            // Direction scalar (a codec wanting a non-empty list of enum
+            // strings accepts it). Appending keeps every existing resolution
+            // byte-identical (only previously-exhausted types change) — the
+            // determinism law holds: both legs run the same codec over the
+            // same candidate ladder (and the ours leg never runs the ladder
+            // at all — the replay resolves through visual-particles.tsv).
+            case 13 -> new net.minecraft.nbt.ListTag();
+            default -> {
+                net.minecraft.nbt.ListTag list = new net.minecraft.nbt.ListTag();
+                list.add(StringTag.valueOf("north"));
+                yield list;
+            }
         };
     }
 
@@ -5946,6 +6043,115 @@ public final class CimSceneMod {
         return placed;
     }
 
+    /**
+     * 14-e283 THE PER-DIMENSION CAMERA RIG (the named lane shipped; the
+     * proposal coverage-walks-completion.md section 2.3). ONE dimension type
+     * per page: enumerate the namespace's dimension types from the ledger
+     * registry, find the live {@link ServerLevel} whose dimension type key
+     * matches, build a 3x3 vantage platform INSIDE that level (a possibly
+     * void world needs the viewer's footing) and teleport the dump viewer
+     * in — the shot = the dimension's own render from 8 blocks out (the
+     * gallery focal contract). The walk is server-side except the teleport;
+     * the workflow's fixed settle window covers the client's dimension
+     * switch before the shot. DIAGNOSTIC-first (the gate reports, never
+     * reds, until the x2 flip law's precondition holds). The honest notes:
+     * no-live-level (the type registers but no dimension is instantiated —
+     * the spatial-storage type without its dimension), no-viewer (the seed
+     * walk runs headless — the shard walks carry the manifests), the
+     * teleport-failed family for a hostile level.
+     */
+    private static int galleryDimension(CommandSourceStack src, String namespace, int page) {
+        ServerLevel level = src.getLevel();
+        setGalleryFrozen(level.getServer(), false, "dimension page entry");
+        writeGalleryIndex(level, namespace);
+        String dimStem = "gallery-dimension-" + namespace + "-p" + page;
+
+        Registry<net.minecraft.world.level.dimension.DimensionType> dims =
+                level.registryAccess().registryOrThrow(Registries.DIMENSION_TYPE);
+        List<ResourceLocation> ids = new ArrayList<>(dims.keySet());
+        ids.sort(Comparator.comparing(ResourceLocation::toString));
+        List<ResourceLocation> entries = new ArrayList<>();
+        for (ResourceLocation id : ids) {
+            if (id.getNamespace().equals(namespace)) entries.add(id);
+        }
+
+        LOGGER.info("[cimscene] gallery-dimension begin ns={} page={} dims={} cellsPerPage=1",
+                namespace, page, entries.size());
+        if (page >= entries.size()) {
+            writeDoneMarkerFile(dimStem, true);
+            LOGGER.info("[cimscene] gallery-dimension done ns={} page={} cells=0 failed=0 exhausted=1",
+                    namespace, page);
+            return 0;
+        }
+        ResourceLocation id = entries.get(page);
+
+        ServerLevel target = null;
+        // NeoForge's patched enumeration (the vanilla getLevels() Map is not
+        // the mapped surface here; getAllLevels() is the Forge/NeoForge patch)
+        for (ServerLevel lvl : level.getServer().getAllLevels()) {
+            ResourceLocation key = level.registryAccess()
+                    .registryOrThrow(Registries.DIMENSION_TYPE).getKey(lvl.dimensionType());
+            if (id.equals(key)) {
+                target = lvl;
+                break;
+            }
+        }
+
+        StringBuilder tsv = new StringBuilder("cell\tx\ty\tz\tdimension\tnote\n");
+        int placed = 0, failed = 0;
+        if (target == null) {
+            failed++;
+            tsv.append("skip\t-1\t-1\t-1\t").append(id).append("\tno-live-level\n");
+            LOGGER.info("[cimscene] gallery-dimension skip ns={} page={} reason=no-live-level dim={}",
+                    namespace, page, id);
+        } else {
+            // THE VANTAGE: the 3x3 platform the viewer stands on, at the
+            // fixed Y=64 (the void/sky dimensions host it; a hostile level
+            // that refuses the build surfaces as its own honest note)
+            for (int dx = -1; dx <= 1; dx++) {
+                for (int dz = -1; dz <= 1; dz++) {
+                    target.setBlock(new BlockPos(dx, 63, dz),
+                            Blocks.POLISHED_ANDESITE.defaultBlockState(), 3);
+                }
+            }
+            ServerPlayer viewer = level.getServer().getPlayerList()
+                    .getPlayerByName("cimviewer");
+            boolean teleported = false;
+            if (viewer == null) {
+                tsv.append("cell\t0\t64\t0\t").append(id).append("\tno-viewer\n");
+                LOGGER.info("[cimscene] gallery-dimension ns={} page={} dim={} note=no-viewer "
+                        + "(the seed walk runs headless; the shard walks carry the shots)",
+                        namespace, page, id);
+            } else {
+                try {
+                    // 8 blocks out (the gallery focal distance), facing the
+                    // platform (yaw 180 = north = -z toward it)
+                    viewer.teleportTo(target, 0.5, 64.0, 8.5, 180.0f, 0.0f);
+                    teleported = true;
+                } catch (Throwable t) {
+                    LOGGER.info("[cimscene] gallery-dimension teleport failed dim={}: {}",
+                            id, t.toString());
+                }
+                placed++;
+                tsv.append("cell\t0\t64\t0\t").append(id)
+                        .append(teleported ? "\tok\n" : "\tteleport-failed\n");
+            }
+            LOGGER.info("[cimscene] gallery-dimension done ns={} page={} cells={} failed={} dim={} "
+                    + "teleported={} level={}", namespace, page, placed, failed, id, teleported,
+                    target.dimension().location());
+        }
+        String manifest = "gallery-dimension-" + namespace + "-p" + page + ".tsv";
+        try {
+            Path parent = Path.of("c-imagine", "scenes");
+            Files.createDirectories(parent);
+            Files.writeString(parent.resolve(manifest), tsv.toString(), StandardCharsets.UTF_8);
+        } catch (IOException ioe) {
+            LOGGER.error("[cimscene] gallery-dimension manifest write failed {}: {}", manifest, ioe.toString());
+        }
+        writeDoneMarkerFile(dimStem, false);
+        return placed;
+    }
+
     // --- inventory gallery (round 2, 2026-11-04 — the GUI ITEMS surface,
     // --- DIAGNOSTIC-first: the open-inventory screen shot on both legs)
 
@@ -6013,6 +6219,19 @@ public final class CimSceneMod {
             // BOTH legs place the same item in the same slot.
             String slot = i < 9 ? ("hotbar." + i) : ("inventory." + (i - 9));
             tsv.append(slot).append('\t').append(slice.get(i)).append('\n');
+        }
+        // 14-e275 THE TURN-OVER LAW: the manifest names ALL 36 slots every
+        // page — the slice's own rows only left the unlisted slots carrying
+        // the PREVIOUS page's items on BOTH legs (the e272 stale-inventory
+        // receipt: ae2-p10 ≡ bop-p10 at 32/36 slots, identical ae vectors
+        // across namespaces = the walk's inventory turn-over missed on
+        // stride pages). minecraft:air rows name the empty slots explicitly:
+        // the truth's rcon `item replace ... with minecraft:air` empties the
+        // slot, ours' carrier fill clears it — the inventory turns over
+        // fully on every page, symmetrically.
+        for (int i = slice.size(); i < INV_CELLS; i++) {
+            String slot = i < 9 ? ("hotbar." + i) : ("inventory." + (i - 9));
+            tsv.append(slot).append("\tminecraft:air\n");
         }
         String manifest = "gallery-inv-" + namespace + "-p" + page + ".tsv";
         try {
@@ -6353,12 +6572,12 @@ public final class CimSceneMod {
                         vehicle.setNoGravity(true);
                         vehicle.setInvulnerable(true);
                         vehicle.setDeltaMovement(Vec3.ZERO);
-                        MOTION_PINNED.put(vehicle, pinDeadline);
+                        MOTION_PINNED.put(vehicle, new PinSpec(vehicle.position(), pinDeadline));
                     } else if (seat) {
                         Entity rider = e.getFirstPassenger();
                         rider.addTag(GALLERY_TAG);
                         rider.setDeltaMovement(Vec3.ZERO);
-                        MOTION_PINNED.put(rider, pinDeadline);
+                        MOTION_PINNED.put(rider, new PinSpec(rider.position(), pinDeadline));
                     }
                 } else if (itemPlaced) {
                     ServerPlayer owner = level.getServer().getPlayerList().getPlayerByName("cimviewer");
@@ -6398,7 +6617,7 @@ public final class CimSceneMod {
                 // subject until the deadline, so the cell position the
                 // settle pass manifests is the position the shot draws.
                 e.setDeltaMovement(Vec3.ZERO);
-                MOTION_PINNED.put(e, pinDeadline);
+                MOTION_PINNED.put(e, new PinSpec(e.position(), pinDeadline));
             } catch (Throwable t) {
                 failed++;
                 skipNotes.put(i, "failed:" + t.getClass().getName());
@@ -6929,7 +7148,14 @@ public final class CimSceneMod {
             double drift = alive ? e.position().distanceTo(new Vec3(cx, cy, cz)) : -1.0;
             if (!alive || drift > 1.0) {
                 dissolved++;
-                rowStr[i] = "skip\t-1\t-1\t-1\t" + id + "\t0\tdissolved";
+                // 14-e281 THE DISSOLVE-NOTE SPLIT: bare "dissolved" named
+                // both death and drift; the suffix is the reason the GATED
+                // ledger demotes on (own-timer = the fuse/expiry classes,
+                // moved = the drift class the position re-pin should hold).
+                // The prefix law keeps both RED-eligible for non-gated
+                // subjects (the gate matches note == pre or startswith).
+                String note = alive ? "dissolved:moved" : "dissolved:own-timer";
+                rowStr[i] = "skip\t-1\t-1\t-1\t" + id + "\t0\t" + note;
                 LOGGER.info("[cimscene] gallery-entity{} settle ns={} page={} index={} "
                                 + "reason={} entity={} drift={}", tag,
                         namespace, page, from + i, alive ? "moved" : "dissolved",

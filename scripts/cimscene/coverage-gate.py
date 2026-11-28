@@ -161,6 +161,11 @@ CLASSES = {
             "gallery-gui done ns={ns} page={p} cells=0"),
     "biome": ("gallery-biome-{ns}-p{p}.tsv", "gal-b", "ours-gal-b",
               "gallery-biome done ns={ns} page={p} cells=0"),
+    # 14-e283 THE PER-DIMENSION CAMERA RIG: one dimension type per page, the
+    # 3x3 vantage platform built INSIDE the target level, the viewer
+    # teleported in (the walk is the named lane shipped; DIAGNOSTIC-first).
+    "dimension": ("gallery-dimension-{ns}-p{p}.tsv", "gal-dim", "ours-gal-dim",
+                  "gallery-dimension done ns={ns} page={p} cells=0"),
     # held rides the ITEM walk: same manifest, same exhaustion marker, its
     # own shot stem (the first-person held shot after the item page shot)
     "held": ("gallery-item-{ns}-p{p}.tsv", "gal-h", "ours-gal-h",
@@ -242,7 +247,7 @@ CLASSES = {
 # honest-RED semantics, the biome flip's precedent); the pixel framediff
 # joins stay report-only until the per-cell contracts ship. inv STAYS
 # diagnostic (the x2 table has inv reds — dynamictrees inv 0/1).
-DIAGNOSTIC_CLASSES = {"sound", "inv",
+DIAGNOSTIC_CLASSES = {"sound", "inv", "dimension",
                       "blockiso",
                       "variant-painting", "variant-wolf", "variant-cat",
                       "variant-frog", "variant-villager", "variant-effect",
@@ -271,7 +276,12 @@ SERIES_WORD = {"entity-mobs": "mobs", "entity-dyn": "dyn",
 # The documented line: worldgen plumbing (features, carvers, loot,
 # predicates, attributes, menus, recipes...) shapes the world or has no
 # per-entry pixel surface — it stays OUTSIDE the world-frame ledger.
-NO_WALK = {"dimension_type"}
+# 14-e283: NO_WALK emptied — dimension_type graduated to the
+# per-dimension camera rig (the CLASSES "dimension" row above;
+# DIAGNOSTIC-first until the x2 flip precondition holds). The set stays
+# (empty) — the no-walk branch remains the honest shape for any future
+# ledger class that ships without a walk.
+NO_WALK = set()
 # biome LEFT the no-walk set (2026-11-04): the biome-tint walk exists now
 # (`cimscene gallery biome <ns> <p>` — one biome per page, fillbiome over
 # the wall region, grass/foliage/water tint sample in frame). It starts
@@ -294,6 +304,8 @@ VARIANT_CLASS = {
     "decorated_pot_pattern": "variant-pot",
     "enchantment": "variant-enchant",
     "jukebox_song": "variant-jukebox",
+    # 14-e283: the ledger's dimension_type row maps onto the camera-rig walk
+    "dimension_type": "dimension",
 }
 
 # per class: manifest skip-row notes that mean the subject is ABSENT from
@@ -336,8 +348,16 @@ ABSENCE_NOTES = {
     # 14-ec: every named absence the blockentity lane's placement/settle can
     # emit — the plan builder found no placeable state, the registry lacks the
     # support block, the item/setBlock placement failed, the settle read a
-    # different BE type at the cell
-    "variant-blockentity": ("no-valid-state", "no-support", "failed", "be-missing", "assert-failed"),
+    # different BE type at the cell. 14-e281: "dissolved" rides too — the
+    # self-timed BE carriers (supplementaries block_generator, structure_temp)
+    # consume their own timer and vanish mid-settle; the measured walk notes
+    # name it (the run-46049855366 supp reconciliation), the old tuple read
+    # those two names as unexplained absences = an honesty hole.
+    "variant-blockentity": ("no-valid-state", "no-support", "failed", "be-missing", "dissolved", "assert-failed"),
+    # 14-e283 the dimension lane's own absences: the type registers but no
+    # dimension is instantiated; the seed walk runs headless (the shard walks
+    # carry the shots); a hostile level refuses the teleport
+    "dimension": ("no-live-level", "no-viewer", "teleport-failed", "assert-failed"),
 }
 
 
@@ -403,6 +423,47 @@ def unshown_rows(scenes, mf_tpl, ns, needed, cls):
     return out
 
 
+def read_gated(scenes, ns):
+    """14-e281 the GATED ledger: the class/subject pairs the walk's own
+    receipts demoted to named report-only (the receipt e272 pattern, the
+    writer side in CimSceneMod's GATED_SUBJECTS). Missing file = empty map —
+    no demotions, everything stays RED (the honest default). A stale row is
+    inert: the walk's own cell row beats a gated name (covered-beats-gated)."""
+    f = scenes / f"gallery-{ns}-gated.tsv"
+    if not f.is_file():
+        return {}
+    out = {}
+    for line in f.read_text(encoding="utf-8").splitlines()[1:]:
+        parts = line.split("\t")
+        if len(parts) != 3 or not parts[0].strip() or not parts[1].strip():
+            continue
+        out[(parts[0].strip(), parts[1].strip())] = parts[2].strip()
+    return out
+
+
+def gated_reason(gated, cls, entry):
+    """The gated reason for an unshown entry 'id(note)', or None. A demotion
+    applies ONLY to the exact (class, subject) pair AND only when the note
+    rides a demotable family (dissolved = the entity lanes' own-timer/moved
+    split, no-simple-options = the particle codec ladder) — a gated subject
+    failing for a NEW reason stays RED (the honest channel; the AC fixture)."""
+    if "(" not in entry:
+        return None
+    sid, note = entry.split("(", 1)
+    note = note.rstrip(")")
+    reason = gated.get((cls, sid))
+    if reason is None:
+        return None
+    if note.startswith("dissolved") or note.startswith("no-simple-options"):
+        return reason
+    # 14-e283: the dimension lane's hostile-level family (the GATED fallback
+    # row's reason=dimension-unreachable rides the teleport-failed/no-live
+    # notes)
+    if note.startswith("teleport-failed") or note.startswith("no-live-level"):
+        return reason
+    return None
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--ns", required=True)
@@ -429,6 +490,7 @@ def main():
                                         "yes" if olist is not None else "no"))
 
     incomplete = []
+    demoted = []  # 14-e281: the named report-only demotions, ON the verdict line
     print(f"coverage-gate: ns={args.ns} index={args.index}")
     for cls, total_cells in index.items():
         total, cells_per_page = total_cells
@@ -479,6 +541,19 @@ def main():
             names = [l.strip() for l in
                      f.read_text(encoding="utf-8").splitlines() if l.strip()]
             remainder = [n for n in names if n not in covered]
+            # 14-e281 the gated split: a covered name never reaches remainder
+            # (covered-beats-gated); a gated remainder name prints the GATED
+            # line and drops out of the RED — everything else REDs exactly
+            # as before, every demotion named on the verdict.
+            gated_map = read_gated(scenes, args.ns)
+            be_gated = [(n, gated_map[("blockentity", n)]) for n in remainder
+                        if ("blockentity", n) in gated_map]
+            remainder = [n for n in remainder
+                         if ("blockentity", n) not in gated_map]
+            for n, reason in be_gated:
+                print(f"GATED\tblockentity\t{n} (gated: {reason} — receipt e272 "
+                      "demotion, named report-only)")
+                demoted.append(f"blockentity/{n}")
             # the walked-class completeness (the variant walk's own receipts)
             infix = shot_infix("variant-blockentity", args.ns)
             tstem = shot_stem(tbase, "variant-blockentity", args.ns)
@@ -596,7 +671,17 @@ def main():
                     no_exhaust = True
             ok = needed == 0 or (missing_mf == 0 and missing_ts == 0
                                  and missing_os == 0 and not no_exhaust)
-            unshown = unshown_rows(scenes, mf_tpl, args.ns, needed, sub)
+            unshown_all = unshown_rows(scenes, mf_tpl, args.ns, needed, sub)
+            gated_map = read_gated(scenes, args.ns)
+            unshown = []
+            for u in unshown_all:
+                reason = gated_reason(gated_map, sub, u)
+                if reason is None:
+                    unshown.append(u)
+                else:
+                    print(f"GATED\t{sub}\t{u} (gated: {reason} — receipt e272 "
+                          "demotion, named report-only)")
+                    demoted.append(f"{sub}/{u.split('(')[0]}")
             if unshown:
                 ok = False
             # DIAGNOSTIC classes (2026-11-04): the checks above run and
@@ -628,6 +713,13 @@ def main():
         print(f"COVERAGE: RED — incomplete walks: {', '.join(incomplete)} "
               f"(content that never reached a page is RED, not green)")
         return 1
+    if demoted:
+        print(f"COVERAGE: GREEN — every class walked to exhaustion, every page "
+              f"manifested and shot on both legs (demoted={len(demoted)}: "
+              + ", ".join(demoted[:12])
+              + (f" +{len(demoted) - 12} more" if len(demoted) > 12 else "")
+              + " — named report-only, receipt e272 pattern)")
+        return 0
     print("COVERAGE: GREEN — every class walked to exhaustion, "
           "every page manifested and shot on both legs")
     return 0

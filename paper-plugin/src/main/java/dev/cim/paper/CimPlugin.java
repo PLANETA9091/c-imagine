@@ -2238,6 +2238,72 @@ public final class CimPlugin extends JavaPlugin implements Listener {
     static final float GALLERY_DZ = -1.04f;
 
     /**
+     * 14-e278 THE ENTITY-PHASE SNAP (measured by
+     * scripts/ephase/aggregate_phase.py on the 30th-flight 46 red cells;
+     * numbers live in ci-logs/r626/phase/aggregate.json): the residual red
+     * diff's edge stepping is the per-cell SUB-PIXEL RASTER PHASE of the
+     * item_display entities. The measured ours-minus-truth phase is a
+     * closed-form LINEAR law of the cell's world coordinate (no per-cell
+     * table):
+     *
+     *   Delta(w) = PHASE_SLOPE * (w - REF) + PHASE_D0      [screen px]
+     *
+     * PHASE_SLOPE = -F * (1/(DIST-EPS) - 1/DIST): ours' content plane renders
+     * EPS blocks IN FRONT of the truth's face plane - CLOSER to the camera
+     * (z_o = 9 - EPS = 8.993; the 14-e91j GALLERY_DZ fit residual), so the
+     * phase drifts linearly across the wall (+0.05 px at col 0 -> -0.44 px at
+     * col 10; the measured +1 edge population falls 40.3% -> 10.3% across the
+     * columns, chi2 z=143.5). PHASE_D0 = the residual axis constant.
+     * Split-half validated: held-out per-edge agreement 48.1-50.9% vs 41.9%
+     * for the no-phase null (aggregate.json Q2).
+     *
+     * SIGN LAW (the 14-t projection sx = W/2 - F*(x-0.5)/8.5): dsx/dx_world =
+     * -CELL_PX, so nulling a measured Delta px needs a translation of
+     * +Delta*DIST/F world units on that axis (positive world x moves the
+     * content LEFT on screen). Delta > 0 = ours' edge RIGHT of truth (vx) /
+     * BELOW truth (hy). The helpers below return that world-unit delta,
+     * landing ours' projected origin exactly on the truth's fractional grid
+     * (the V1 variant: predicted kill 28.2% of the shifted vx edge mass /
+     * 40.7% of the shifted hy mass; the literal integer-grid snap only kills
+     * 4.0%/20.7% and is NOT what this rides - aggregate.json Q3). The
+     * in-cell residual after the origin null is <= 0.047 px (the plane's
+     * texel drift), 20x below the 1 px flip quantum.
+     */
+    static final int GALLERY_FRAME_W = 1280;
+    static final int GALLERY_FRAME_H = 720;
+    static final double GALLERY_VFOV_DEG = 70.0;
+    /** the locked rig camera: feet (0.5, -60, 0.5), eyes -58.38
+     *  (camera-lock-26-3.md; CimSceneMod gallery doc ~505). */
+    static final double GALLERY_CAM_X = 0.5;
+    static final double GALLERY_EYE_Y = -58.38;
+    static final double GALLERY_DIST = 8.5;  // face plane z=9.0 - cam z=0.5
+    /** fitted content-plane offset in front of the truth face plane
+     *  (blocks; z_o = WALL_Z - EPS = 8.993, i.e. 7 mm toward the camera). */
+    static final double GALLERY_PHASE_EPS = 0.007;
+    /** fitted axis constants (screen px, ours-minus-truth). */
+    static final double GALLERY_PHASE_D0_X_PX = -0.22;
+    static final double GALLERY_PHASE_D0_Y_PX = -0.32;
+
+    static final double GALLERY_F_PX = (GALLERY_FRAME_H / 2.0)
+            / Math.tan(Math.toRadians(GALLERY_VFOV_DEG / 2.0)); // 514.1333
+    static final double GALLERY_WUPPX = GALLERY_DIST / GALLERY_F_PX; // 0.0165327
+    /** -0.0499 px per world block: the fitted column-linear phase slope. */
+    static final double GALLERY_PHASE_SLOPE = -GALLERY_F_PX
+            * (1.0 / (GALLERY_DIST - GALLERY_PHASE_EPS) - 1.0 / GALLERY_DIST);
+
+    /** World-unit x translation that nulls the sub-pixel phase at cell x. */
+    private static double galleryPhaseDx(double cellWorldX) {
+        return (GALLERY_PHASE_SLOPE * (cellWorldX - GALLERY_CAM_X)
+                + GALLERY_PHASE_D0_X_PX) * GALLERY_WUPPX;
+    }
+
+    /** World-unit y translation that nulls the sub-pixel phase at cell y. */
+    private static double galleryPhaseDy(double cellWorldY) {
+        return (GALLERY_PHASE_SLOPE * (cellWorldY - GALLERY_EYE_Y)
+                + GALLERY_PHASE_D0_Y_PX) * GALLERY_WUPPX;
+    }
+
+    /**
      * 14-du THE LIGHT-SPILL LAW: the truth's light-emitting rows light the
      * scene AROUND them (the lit candle's wall renders at block light 12-13
      * while the replay's air band sits at 0 — the crop measured the whole-cell
@@ -2870,8 +2936,13 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                     perCellKeys.add(key);
                     continue;
                 }
-                double dx = c.x() - ax;
-                double dy = c.y() - ay;
+                // 14-e278 THE ENTITY-PHASE SNAP: the child offset rides the
+                // per-cell sub-pixel correction. The page display's own
+                // translation stays the anchor's - the law is per-CELL, so
+                // correcting the shared translation would mis-phase every
+                // non-anchor column (aggregate.json Q3 V1).
+                double dx = c.x() - ax + galleryPhaseDx(c.x());
+                double dy = c.y() - ay + galleryPhaseDy(c.y());
                 // 14-e67: the multi-mesh extras ride their own translated
                 // children at the SAME cell offset (their wrappers = the
                 // cell frame too)
@@ -3351,7 +3422,12 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                 org.bukkit.Location at = new org.bukkit.Location(world(worldName()),
                         x, y, z - rigShift);
                 org.bukkit.util.Transformation tr = new org.bukkit.util.Transformation(
-                        new org.joml.Vector3f(GALLERY_TX + 0.5f, GALLERY_TY + 0.5f,
+                        // 14-e278 THE ENTITY-PHASE SNAP: +Delta*WUPPX per axis
+                        // nulls the fitted sub-pixel phase (the V1 truth-grid
+                        // snap; the FB/X companion displays reuse this tr)
+                        new org.joml.Vector3f(
+                                (float) (GALLERY_TX + 0.5f + galleryPhaseDx(x)),
+                                (float) (GALLERY_TY + 0.5f + galleryPhaseDy(y)),
                                 GALLERY_TZ + rigShift + 0.5f + GALLERY_DZ),
                         // MEASURED (run 9 vs the truth leg): vanilla blockstate
                         // x=90 is R_x(-90) — joml rotationXYZ applies +angles,
@@ -5043,8 +5119,10 @@ public final class CimPlugin extends JavaPlugin implements Listener {
      * no pack row count as nochannel (the slot stays empty, the join names
      * it). The E/ESC key presses and the shot live in the CI walk.
      *
-     * <p>Returns {@code [placed, nochannel, cells]}; the RCON marker is
-     * {@code gallerypage-inv <ns> p<page> -> placed=N nochannel=K cells=M}.
+     * <p>Returns {@code [placed, nochannel, cells, cleared]}; the RCON marker
+     * is {@code gallerypage-inv <ns> p<page> -> placed=N nochannel=K cells=M
+     * cleared=C} — cleared counts the manifest's air rows (the 14-e275
+     * turn-over law) plus the nochannel slots, every one set to empty
      */
     private int[] galleryPageInv(String ns, int page) {
         Path mf = Path.of(System.getProperty("user.dir"), "c-imagine", "scenes",
@@ -5096,12 +5174,12 @@ public final class CimPlugin extends JavaPlugin implements Listener {
             }
         });
         int[] counts = callSync(() -> {
-            int placed = 0, nochannel = 0;
+            int placed = 0, nochannel = 0, cleared = 0;
             org.bukkit.entity.Player viewer =
                     org.bukkit.Bukkit.getPlayerExact("cimviewer");
             if (viewer == null) {
                 log().warning(LOG_PREFIX + "f2v gallery-inv: no cimviewer online — fill skipped");
-                return new int[]{0, slots.size(), slots.size()};
+                return new int[]{0, slots.size(), slots.size(), 0};
             }
             for (String[] row : slots) {
                 // slot|item  (slot = hotbar.0..8 | inventory.9..35)
@@ -5110,13 +5188,6 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                 }
                 String slotName = row[0];
                 String itemId = row[1];
-                Float cmd = cmdByItem.get(itemId);
-                if (cmd == null) {
-                    nochannel++;
-                    log().warning(LOG_PREFIX + "f2v gallery-inv: no pack CMD for "
-                            + itemId + " — slot " + slotName + " left empty (nochannel)");
-                    continue;
-                }
                 int bukkitSlot;
                 if (slotName.startsWith("hotbar.")) {
                     bukkitSlot = Integer.parseInt(slotName.substring("hotbar.".length()));
@@ -5135,6 +5206,24 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                 if (bukkitSlot < 0 || bukkitSlot > 35) {
                     continue;
                 }
+                Float cmd = cmdByItem.get(itemId);
+                // 14-e275 THE TURN-OVER LAW: an air row names an empty slot
+                // explicitly (the manifest carries ALL 36 slots every page —
+                // the walk's stale-inventory receipt, ae2-p10 ≡ bop-p10 at
+                // 32/36 slots) — clear it, never leave the previous page's
+                // carrier sitting there. Same for nochannel: a slot whose
+                // item cannot resolve shows NOTHING (what ours can honestly
+                // render), not the stale wrong item.
+                if (itemId.equals("minecraft:air") || cmd == null) {
+                    viewer.getInventory().setItem(bukkitSlot, null);
+                    cleared++;
+                    if (cmd == null) {
+                        nochannel++;
+                        log().warning(LOG_PREFIX + "f2v gallery-inv: no pack CMD for "
+                                + itemId + " — slot " + slotName + " cleared (nochannel)");
+                    }
+                    continue;
+                }
                 ItemStack stack = new ItemStack(Material.matchMaterial("paper"));
                 final float fcmd = cmd;
                 stack.editMeta(meta -> {
@@ -5146,9 +5235,9 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                 placed++;
             }
             viewer.updateInventory();
-            return new int[]{placed, nochannel, slots.size()};
+            return new int[]{placed, nochannel, slots.size(), cleared};
         });
-        return counts == null ? new int[]{0, 0, -1} : counts;
+        return counts == null ? new int[]{0, 0, -1, 0} : counts;
     }
 
     /**
@@ -6010,7 +6099,8 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                 sender.sendMessage(LOG_PREFIX + "gallerypage-inv " + args[1]
                         + " p" + page + " -> placed=" + counts[0]
                         + " nochannel=" + counts[1]
-                        + " cells=" + (counts[2] < 0 ? "missing" : counts[2]));
+                        + " cells=" + (counts[2] < 0 ? "missing" : counts[2])
+                        + " cleared=" + counts[3]);
             } catch (NumberFormatException nfe) {
                 sender.sendMessage(LOG_PREFIX + "gallerypage-inv: bad page number: " + args[2]);
             }

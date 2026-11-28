@@ -6432,6 +6432,7 @@ public final class F2vPack {
                 && inflated.getAsJsonArray("from").get(2).getAsDouble() < 32,
                 "gallery: a degenerate plane on the limit inflates inward only");
         unlitBlockSelftest(failures);
+        doorCompositionSelftest(failures);
         carrierSelftest(failures);
         itemAllocationSelftest(failures);
         rawCaptureTextureSelftest(failures);
@@ -7561,6 +7562,128 @@ public final class F2vPack {
                 "malformed blockstates resolve to no model");
     }
 
+    /**
+     * 14-e276 THE OPEN-POSE DOOR COMPOSITION's synthetic proof: a closed
+     * sibling (the full panel + the right frame piece) and an open leaf-only
+     * mesh (the measured slid shape, x -13..3, z 12.5..15.5) through the
+     * quad channel. The composition must carry the closed sibling's
+     * non-overlapping frame rows (the frame piece at x 4..16 survives, the
+     * full panel row at x 0..16 z13 DROPS — its z overlaps the slid leaf's
+     * slab), keep the leaf rows at their raw world coords (the truth's leaf
+     * rides the pocket too), and normalize the half window. The emitted
+     * composite: exactly two elements, the frame in-cell, the leaf's tile
+     * slab centered on the leaf's raw center (x -5; the tile's pixel-edge
+     * bulge rides the slab through the plane rotation).
+     */
+    private static void doorCompositionSelftest(List<String> failures) throws IOException {
+        Path quads = Files.createTempDirectory("f2v-door-selftest");
+        String closed = "create:brass_door[facing=north,half=lower,open=false,visible=false]";
+        String open = "create:brass_door[facing=north,half=lower,open=true,visible=false]";
+        String sprite = "fixture:block/door_panel";
+        java.util.function.BiFunction<double[][], String, String> quadRow = (v, mat) -> {
+            StringBuilder b = new StringBuilder(sprite).append("\t0\t0");
+            for (double[] p : v) {
+                b.append('\t').append(p[0]).append('\t').append(p[1]).append('\t')
+                        .append(p[2]).append('\t').append(p[3]).append('\t').append(p[4]);
+            }
+            for (int i = 0; i < 12; i++) b.append("\t1");
+            for (int i = 0; i < 4; i++) b.append("\t1");
+            return b.append('\t').append(mat).toString();
+        };
+        java.util.function.Function<double[], String> panel = (z) -> quadRow.apply(
+                new double[][]{{0, 0, z[0], 0, 16}, {16, 0, z[1], 16, 16},
+                        {16, 16, z[1], 16, 0}, {0, 16, z[0], 0, 0}}, "cutout");
+        // rows.tsv: the bare state -> its #q<hash> capture (the same file the
+        // walk's QuadDump ledger writes)
+        String panelRow = panel.apply(new double[]{13, 13});
+        String frameRow = quadRow.apply(new double[][]{{4, 0, 14, 0, 16}, {16, 0, 14, 16, 16},
+                {16, 16, 14, 16, 0}, {4, 16, 14, 0, 0}}, "cutout");
+        String leafRow = quadRow.apply(new double[][]{{-13, 0, 12.5, 0, 16}, {3, 0, 15.5, 16, 16},
+                {3, 16, 15.5, 16, 0}, {-13, 16, 12.5, 0, 0}}, "cutout");
+        Files.writeString(quads.resolve("rows.tsv"),
+                closed + "#qclosed\n" + open + "#qopen\n", StandardCharsets.UTF_8);
+        // the closed capture: the full panel (frame + leaf at rest, z13) +
+        // the right frame piece (x 4..16, z14 — does not reach the pocket)
+        Files.writeString(quads.resolve("closed.tsv"), panelRow + "\n" + frameRow + "\n",
+                StandardCharsets.UTF_8);
+        // the open capture: THE LEAF ONLY at the raw slid frame (the measured
+        // train_door box: x -13..3, z 12.5..15.5 — a slab, so the closed
+        // panel row's z overlaps it and drops)
+        Files.writeString(quads.resolve("open.tsv"), leafRow + "\n", StandardCharsets.UTF_8);
+        GalleryPack.resetModelScales();
+        ObjMesh.resetBaker();
+        TreeMap<String, byte[]> entries = new TreeMap<>();
+        var opaque = new java.awt.image.BufferedImage(16, 16,
+                java.awt.image.BufferedImage.TYPE_INT_ARGB);
+        for (int y = 0; y < 16; y++) {
+            for (int x = 0; x < 16; x++) opaque.setRGB(x, y, 0xffc8a064);
+        }
+        var png = new java.io.ByteArrayOutputStream();
+        javax.imageio.ImageIO.write(opaque, "png", png);
+        entries.put(GalleryPack.spritePathPng(sprite), png.toByteArray());
+        List<String> warnings = new ArrayList<>();
+        GalleryPack.setQuadDir(quads);
+        var rows = GalleryPack.build(List.of(), List.of(new GalleryPack.Input(open + "#qopen")),
+                entries, warnings, Map.of(), new ArrayList<>());
+        expect(failures, rows.size() == 1, "door composition: the open row resolves");
+        if (rows.isEmpty()) return;
+        ObjMesh.flushBaker(GalleryPack.WRAPPER_NS, entries);
+        JsonObject node = GalleryPack.itemNode(rows.getFirst().modelRef());
+        // 14-e278 SECTION A — THE LIVE GATE: the composition is gated off in
+        // the live path (the 31st flight measured the sibling-rows law false
+        // on the real captures: the composed open cells rendered the closed
+        // sibling's full panel, the closed neighbors lost their own mesh).
+        // The live path replays the RAW leaf mesh byte-identical.
+        int frame = 0, slid = 0, total = 0;
+        for (var mv : node.getAsJsonArray("models")) {
+            JsonObject draw = mv.getAsJsonObject();
+            JsonObject model = JsonParser.parseString(new String(entries.get("assets/"
+                    + draw.get("model").getAsString().replace(":", "/models/") + ".json"),
+                    StandardCharsets.UTF_8)).getAsJsonObject();
+            for (var elE : model.getAsJsonArray("elements")) {
+                JsonObject el = elE.getAsJsonObject();
+                double x0 = el.getAsJsonArray("from").get(0).getAsDouble();
+                double x1 = el.getAsJsonArray("to").get(0).getAsDouble();
+                total++;
+                if (x0 >= 3.99 && x1 <= 16.01) frame++;
+                if (x0 <= -12.9 && Math.abs((x0 + x1) / 2 - (-5.0)) < 0.05) slid++;
+            }
+        }
+        expect(failures, total == 1 && frame == 0 && slid == 1,
+                "door gate: the live path replays the raw leaf only (composition gated off)");
+        // 14-e278 SECTION B — THE ALGEBRA: the composition method itself is
+        // proven on the same synthetic fixture (a direct call; the live path
+        // keeps the gate, the rebuild rides the per-state mesh evidence).
+        List<String> composed = GalleryPack.composeOpenDoorMesh(
+                open, List.of(leafRow), new ArrayList<>());
+        expect(failures, composed != null && composed.size() == 2,
+                "door algebra: the composition composes (frame + leaf, panel dropped)");
+        if (composed != null) {
+            boolean hasFrame = false;
+            boolean hasLeaf = false;
+            for (String r : composed) {
+                String[] f = r.split("\t");
+                if (f.length < 23) {
+                    continue;
+                }
+                double[] xs = new double[4];
+                for (int vi = 0; vi < 4; vi++) {
+                    xs[vi] = Double.parseDouble(f[3 + vi * 5]);
+                }
+                double x0 = Math.min(Math.min(xs[0], xs[1]), Math.min(xs[2], xs[3]));
+                double x1 = Math.max(Math.max(xs[0], xs[1]), Math.max(xs[2], xs[3]));
+                if (Math.abs(x0 - 4) < 0.01 && Math.abs(x1 - 16) < 0.01) {
+                    hasFrame = true;
+                }
+                if (Math.abs(x0 - (-13)) < 0.01 && Math.abs(x1 - 3) < 0.01) {
+                    hasLeaf = true;
+                }
+            }
+            expect(failures, hasFrame && hasLeaf,
+                    "door algebra: frame carried in-cell (x 4..16) + leaf raw (x -13..3)");
+        }
+    }
+
     private static void unlitBlockSelftest(List<String> failures) throws IOException {
         unlitPlaneSelftest(failures);
         capturedMaterialAlphaSelftest(failures);
@@ -7729,13 +7852,29 @@ public final class F2vPack {
                 int y1 = (int) Math.round(uv.get(3).getAsDouble() * sheet.getHeight() / 16);
                 int min = 255, max = 0;
                 boolean correct = true;
-                for (int y = Math.min(y0, y1); y < Math.max(y0, y1); y++) {
-                    for (int x = Math.min(x0, x1); x < Math.max(x0, x1); x++) {
+                // 14-e281 the snap's MARGIN LAW: the screen-grid snapped rect
+                // grows <= 1 px per side past the polygon's own projected bbox
+                // (the floor/ceil of the fractional span), and the margin px
+                // sample plane points OUTSIDE the polygon — transparent. The
+                // cutout layer discards them, which is exactly the native
+                // not-covered rule, so a transparent pixel is correct content
+                // iff it sits on the rect's outermost row/column. The opaque
+                // pixels remain the exactly-once contract: the polygon's
+                // screen-grid coverage, source x captured colour once.
+                int xLo = Math.min(x0, x1), xHi = Math.max(x0, x1);
+                int yLo = Math.min(y0, y1), yHi = Math.max(y0, y1);
+                for (int y = yLo; y < yHi; y++) {
+                    for (int x = xLo; x < xHi; x++) {
                         int pixel = sheet.getRGB(x, y);
+                        boolean margin = x == xLo || x == xHi - 1
+                                || y == yLo || y == yHi - 1;
+                        if ((pixel >>> 24) != 255) {
+                            correct &= margin;
+                            continue;
+                        }
                         int red = (pixel >>> 16) & 255;
                         min = Math.min(min, red);
                         max = Math.max(max, red);
-                        correct &= (pixel >>> 24) == 255;
                         if (mode != 4) {
                             correct &= Math.abs(red - 120) <= 1
                                     && Math.abs(((pixel >>> 8) & 255) - 96) <= 1
@@ -7743,9 +7882,21 @@ public final class F2vPack {
                         }
                     }
                 }
-                if (mode == 4) correct &= min >= 79 && max <= 161 && max - min > 60;
+                // 14-e275: the gradient contract rode the OUTPUT-density
+                // tile's own oversampled barycentric grid (the 4-texel tile
+                // sampled captured 0.5..0.8, red 100..160, spread 60).
+                // 14-e281 THE SNAPPED CONTRACT: the tile = the polygon's own
+                // screen-grid coverage — this fixture's 3.2 px polygon covers
+                // only the 3x3 native px whose CENTRES sit inside it; the
+                // gradient's extreme corners ride the transparent margin (the
+                // measured covered band = captured 0.565..0.8, red 113..160,
+                // spread 47). The DETECTORS keep their teeth: a squared
+                // multiply lands min ~64 (< 79), a missing multiply lands
+                // max 200 (> 161), a flat capture spreads 0 (< 45).
+                if (mode == 4) correct &= min >= 79 && max <= 161 && max - min >= 45;
                 expect(failures, correct && min <= max,
-                        "captured RGB: opaque source times captured color exactly once mode=" + mode);
+                        "captured RGB: opaque source times captured color exactly once mode=" + mode
+                                + " (min=" + min + " max=" + max + " spread=" + (max - min) + ")");
             }
             ObjMesh.resetBaker();
             // Equal planes across different meshes share model bytes while
