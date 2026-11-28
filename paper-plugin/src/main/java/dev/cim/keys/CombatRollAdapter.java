@@ -105,7 +105,10 @@ public final class CombatRollAdapter implements ModKeyAdapter, Listener {
                 player.isSwimming() || player.getPose() == Pose.SWIMMING, player.isInsideVehicle(),
                 player.isHandRaised() || player.isBlocking(), player.getAttackCooldown());
         boolean dead = player.isDead() || player.getHealth() <= 0.0;
-        if (!CombatRollRules.gatesPass(state, moveSpeed, dead, body)) {
+        String refused = CombatRollRules.refusal(state, moveSpeed, dead, body);
+        if (refused != null) {
+            // Logged on every refused press: a press that never rolls must say which gate held it.
+            plugin.getLogger().info("[cim-key] " + player.getName() + " roll refused: " + refused);
             return;
         }
         Loadout loadout = loadout(player);

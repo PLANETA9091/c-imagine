@@ -19,6 +19,11 @@ public final class CombatRollRules {
     public static final int ROLL_DURATION = 8;
     public static final boolean ALLOW_AIRBORNE = false;
     public static final boolean ALLOW_WEAPON_COOLDOWN = false;
+    /**
+     * Food at or above this lets a roll go. Truth (NeoForge + Combat Roll, runner scenario
+     * survival-cr-roll-forward, 2026-11-27) rolled at food 6 with saturation 0, so the bound is
+     * inclusive; the old "above 6" bound refused that roll on OURS.
+     */
     public static final float FOOD_LEVEL_REQUIRED = 6.0f;
     public static final float EXHAUST_ON_ROLL = 0.1f;
     public static final float ROLL_COOLDOWN_SECONDS = 4.0f;
@@ -171,19 +176,31 @@ public final class CombatRollRules {
 
     /** Every gate of tryRolling that the server can see, in the client's order. */
     public static boolean gatesPass(RollState state, double moveSpeed, boolean dead, Body body) {
+        return refusal(state, moveSpeed, dead, body) == null;
+    }
+
+    /**
+     * The first gate that refuses the roll, or null when the roll may go. Same order as
+     * {@link #gatesPass}; the adapter logs the reason so a refused press is visible in the server log.
+     */
+    public static String refusal(RollState state, double moveSpeed, boolean dead, Body body) {
         if (!state.isAvailable(dead, moveSpeed)) {
-            return false;
+            return "charges=" + state.availableRolls() + " rolling=" + state.isRolling() + " dead=" + dead
+                    + " moveSpeed=" + moveSpeed;
         }
         if (!ALLOW_AIRBORNE && !body.onGround()) {
-            return false;
+            return "airborne";
         }
-        if (!((float) body.food() > FOOD_LEVEL_REQUIRED)) {
-            return false;
+        if (!((float) body.food() >= FOOD_LEVEL_REQUIRED)) {
+            return "food=" + body.food();
         }
         if (body.swimming() || body.inVehicle() || body.usingItemOrBlocking()) {
-            return false;
+            return "swimming/vehicle/using";
         }
-        return ALLOW_WEAPON_COOLDOWN || !(body.attackStrength() < 0.95);
+        if (!ALLOW_WEAPON_COOLDOWN && body.attackStrength() < 0.95) {
+            return "attackStrength=" + body.attackStrength();
+        }
+        return null;
     }
 
     /**
@@ -273,10 +290,12 @@ public final class CombatRollRules {
         bad += check(gatesPass(ready, 0.1, false, onGround), "gates: on ground, fed, ready -> roll");
         bad += check(!gatesPass(ready, 0.1, false, new Body(false, 20, false, false, false, 1.0)),
                 "gates: airborne refused (allow_rolling_while_airborn is false)");
-        bad += check(!gatesPass(ready, 0.1, false, new Body(true, 6, false, false, false, 1.0)),
-                "gates: food 6 refused (needs above 6)");
-        bad += check(gatesPass(ready, 0.1, false, new Body(true, 7, false, false, false, 1.0)),
-                "gates: food 7 allowed");
+        bad += check(gatesPass(ready, 0.1, false, new Body(true, 6, false, false, false, 1.0)),
+                "gates: food 6 allowed (truth rolls at food 6)");
+        bad += check(!gatesPass(ready, 0.1, false, new Body(true, 5, false, false, false, 1.0)),
+                "gates: food 5 refused");
+        bad += check(refusal(ready, 0.1, false, new Body(true, 5, false, false, false, 1.0)) != null,
+                "refusal names the gate when refused");
         bad += check(!gatesPass(ready, 0.1, false, new Body(true, 20, false, false, false, 0.94)),
                 "gates: attack strength 0.94 refused (needs 0.95)");
         bad += check(!gatesPass(ready, 0.1, false, new Body(true, 20, true, false, false, 1.0)),
