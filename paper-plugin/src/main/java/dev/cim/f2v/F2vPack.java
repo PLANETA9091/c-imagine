@@ -6474,6 +6474,7 @@ public final class F2vPack {
         doorCompositionSelftest(failures);
         carrierSelftest(failures);
         itemAllocationSelftest(failures);
+        itemWrapperGuiLightSelftest(failures);
         rawCaptureTextureSelftest(failures);
         capturedAlphaSelftest(failures);
         capturedEmptyMeshSelftest(failures);
@@ -7513,6 +7514,88 @@ public final class F2vPack {
                     "a missing ledger reads as no allocated items");
         } finally {
             deleteRecursively(tmp);
+        }
+    }
+
+    private static void itemWrapperGuiLightSelftest(List<String> failures) throws IOException {
+        Path root = Files.createTempDirectory("f2v-guilight");
+        try {
+            // The measured 26.3 vanilla assets: block/block carries
+            // "gui_light": "side", item/generated carries "front" (the stubs
+            // mirror both); a chain with the key nowhere rides the
+            // deserializer default "side". The item composite wrapper must
+            // carry the chain-resolved value (the inv lane renders it in
+            // GUI — a forced side re-shades front-lit meshes).
+            var png = new java.io.ByteArrayOutputStream();
+            javax.imageio.ImageIO.write(new java.awt.image.BufferedImage(4, 4,
+                    java.awt.image.BufferedImage.TYPE_INT_ARGB), "png", png);
+            TreeMap<String, byte[]> jarEntries = new TreeMap<>();
+            jarEntries.put("assets/minecraft/models/block/block.json",
+                    "{\"gui_light\": \"side\"}".getBytes(StandardCharsets.UTF_8));
+            jarEntries.put("assets/minecraft/models/item/generated.json",
+                    "{\"gui_light\": \"front\"}".getBytes(StandardCharsets.UTF_8));
+            jarEntries.put("assets/fixture/textures/block/glass.png", png.toByteArray());
+            jarEntries.put("assets/fixture/models/item/flat_thing.json",
+                    ("{\"parent\": \"minecraft:item/generated\", "
+                    + "\"textures\": {\"all\": \"fixture:block/glass\"}, "
+                    + "\"elements\": [{\"from\": [0,0,0], \"to\": [16,16,16], "
+                    + "\"faces\": {\"north\": {\"texture\": \"#all\", \"uv\": [0,0,16,16]}}}]}")
+                            .getBytes(StandardCharsets.UTF_8));
+            jarEntries.put("assets/minecraft/models/block/cube_all.json",
+                    ("{\"parent\": \"block/cube\", "
+                    + "\"textures\": {\"particle\": \"#all\", \"down\": \"#all\", \"up\": \"#all\", "
+                    + "\"north\": \"#all\", \"east\": \"#all\", \"south\": \"#all\", \"west\": \"#all\"}}")
+                            .getBytes(StandardCharsets.UTF_8));
+            jarEntries.put("assets/minecraft/models/block/cube.json",
+                    ("{\"parent\": \"block/block\", "
+                    + "\"textures\": {\"particle\": \"#down\"}, "
+                    + "\"elements\": [{\"from\": [0,0,0], \"to\": [16,16,16], "
+                    + "\"faces\": {\"down\": {\"texture\": \"#down\", \"cullface\": \"down\"}, "
+                    + "\"up\": {\"texture\": \"#up\", \"cullface\": \"up\"}, "
+                    + "\"north\": {\"texture\": \"#north\", \"cullface\": \"north\"}, "
+                    + "\"south\": {\"texture\": \"#south\", \"cullface\": \"south\"}, "
+                    + "\"west\": {\"texture\": \"#west\", \"cullface\": \"west\"}, "
+                    + "\"east\": {\"texture\": \"#east\", \"cullface\": \"east\"}}}]}")
+                            .getBytes(StandardCharsets.UTF_8));
+            jarEntries.put("assets/fixture/models/item/side_thing.json",
+                    ("{\"parent\": \"block/cube_all\", "
+                    + "\"textures\": {\"all\": \"fixture:block/glass\"}}")
+                            .getBytes(StandardCharsets.UTF_8));
+            jarEntries.put("assets/fixture/models/item/own_thing.json",
+                    ("{\"textures\": {\"all\": \"fixture:block/glass\"}, "
+                    + "\"elements\": [{\"from\": [0,0,0], \"to\": [16,16,16], "
+                    + "\"faces\": {\"north\": {\"texture\": \"#all\", \"uv\": [0,0,16,16]}}}]}")
+                            .getBytes(StandardCharsets.UTF_8));
+            Path jar = root.resolve("fixture.jar");
+            writeJar(jar, jarEntries);
+            String[] refs = {"fixture:flat_thing", "fixture:side_thing", "fixture:own_thing"};
+            String[] expected = {"front", "side", "side"};
+            for (int i = 0; i < refs.length; i++) {
+                ObjMesh.resetBaker();
+                GalleryPack.resetJarCache();
+                GalleryPack.resetModelScales();
+                TreeMap<String, byte[]> entries = new TreeMap<>();
+                List<String> warnings = new ArrayList<>();
+                String ref = GalleryPack.synthesizeItemComposite(List.of(jar), refs[i], i,
+                        entries, warnings);
+                expect(failures, ref != null, "gui light: chain resolves " + refs[i]
+                        + (ref == null ? " warnings=" + warnings : ""));
+                if (ref == null) {
+                    continue;
+                }
+                ObjMesh.flushBaker(GalleryPack.WRAPPER_NS, entries);
+                JsonObject model = JsonParser.parseString(new String(entries.get(
+                        "assets/c-imagine/models/items/i" + i + ".json"),
+                        StandardCharsets.UTF_8)).getAsJsonObject();
+                expect(failures, model.has("gui_light") && expected[i].equals(
+                                model.get("gui_light").getAsString()),
+                        "gui light: wrapper carries the chain-resolved value " + refs[i]);
+            }
+        } finally {
+            GalleryPack.resetJarCache();
+            ObjMesh.resetBaker();
+            GalleryPack.resetModelScales();
+            deleteRecursively(root);
         }
     }
 
