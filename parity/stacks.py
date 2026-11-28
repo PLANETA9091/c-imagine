@@ -40,6 +40,8 @@ HOME = os.path.expanduser("~")
 TRUTH_CTL_PORT = int(os.environ.get("PARITY_TRUTH_PORT", "25599"))
 TRUTH_PLAYER = "TruthA"
 OURS_PLAYER = "Lane_B"
+# The client refuses a command with this chat line while the command reply still says ok (Easton r4).
+CHAT_REFUSAL = "Chat disabled in client options"
 HZ_SH = os.environ.get("PARITY_HZ", os.path.join(HOME, "hud-work/horizon-play/hz.sh"))
 HZ_N = os.environ.get("PARITY_HZ_N", "3")
 OURS_SRV_DIR = os.environ.get("PARITY_OURS_LOG_DIR", os.path.join(HOME, "hud-work/horizon-play/srv"))
@@ -339,7 +341,12 @@ def _map_from_screen(reply):
 def norm_inventory(reply):  # player inventory: names by item only
     counts = {}
     for key in ("hotbar", "main", "armor", "offhand"):
-        for s in reply.get(key) or []:
+        slots = reply.get(key) or []
+        if isinstance(slots, dict):  # Horizon: offhand is ONE slot object, not a list
+            slots = [slots]
+        for s in slots:
+            if not isinstance(s, dict):
+                continue
             nid = norm_id(s.get("item"))
             if nid:
                 counts[nid] = counts.get(nid, 0) + int(s.get("count", 0))
@@ -576,6 +583,20 @@ def norm_player(reply):
 
 
 # ------------------------------------------------------------------ base
+def parse_reply(out):
+    """horizon-ctl stdout -> one JSON object. Bare text or a JSON string/list/number becomes {"raw": ...}."""
+    out = (out or "").strip()
+    if not out:
+        return {}
+    try:
+        obj = json.loads(out)
+    except ValueError:
+        return {"raw": out}
+    if isinstance(obj, dict):
+        return obj
+    return {"raw": obj if isinstance(obj, str) else out}
+
+
 class Stack:
     _inv_raw = None
 
@@ -588,6 +609,10 @@ class Stack:
 
     def setup_command(self, text):
         raise NotImplementedError
+
+    def heal_setup(self):
+        """Per-scenario setup, both stacks (heal.py): peaceful, so no hostile mob spawns or hits a lane mid-scenario."""
+        self.setup_command("difficulty peaceful")
 
     def select(self, item):
         raise NotImplementedError
@@ -1019,12 +1044,39 @@ class OursStack(Stack):
         if p.returncode != 0:
             raise RuntimeError("horizon-ctl %s rc=%d: %s" % (args[0], p.returncode,
                                                             (p.stderr or p.stdout).decode("utf-8", "replace")[-400:]))
-        if not out:
-            return {}
+        return parse_reply(out)
+
+    def _refusals(self):
+        """Count of the client's 'Chat disabled in client options' lines among its newest 50 chat messages."""
+        return json.dumps(self.ctl("chat-log", 50)).lower().count(CHAT_REFUSAL.lower())
+
+    def heal_setup(self):
+        """Per-scenario setup: peaceful (no mob deaths mid-scenario). A client that refuses the command raises."""
+        self.setup_command("difficulty peaceful")
+
+    def heal_chat_recover(self):
+        """A client refusing commands: toggle chat visibility in options, then report whether the lane needs a
+        relaunch (the caller re-runs the heal from the top after one). Returns {"ok", "actions", "relaunch"}."""
+        actions = []
         try:
-            return json.loads(out)
-        except json.JSONDecodeError:
-            return {"raw": out}
+            self.ctl("options-set", "chatVisibility", "2")
+            self.ctl("options-set", "chatVisibility", "0")
+            actions.append("options chatVisibility 2 then 0")
+            self.heal_setup()
+            return {"ok": True, "actions": actions, "relaunch": False}
+        except RuntimeError:
+            actions.append("chat still refused after the options toggle")
+        server = os.environ.get("PARITY_HZ_SERVER", "127.0.0.1:25665")
+        devnull = subprocess.DEVNULL
+        subprocess.run([HZ_SH, self.hz_n, "stop"], stdin=devnull, stdout=subprocess.PIPE,
+                       stderr=subprocess.PIPE, timeout=180)
+        p = subprocess.run([HZ_SH, self.hz_n, "start", "--server", server, "--name", self.player],
+                           stdin=devnull, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=600)
+        if p.returncode != 0:
+            actions.append("relaunch of lane %s failed rc=%d" % (self.hz_n, p.returncode))
+            return {"ok": False, "actions": actions, "relaunch": False}
+        actions.append("relaunch lane %s client" % self.hz_n)
+        return {"ok": True, "actions": actions, "relaunch": True}
 
     @staticmethod
     def _p(pos):
@@ -1051,7 +1103,13 @@ class OursStack(Stack):
         return text
 
     def setup_command(self, text):
-        self.ctl("command", self.translate(text))
+        # A refusal is a chat line from the client, not an error in the command reply (Easton r4): a new
+        # refusal line, or one in the reply itself, is an error so the step is not reported ok.
+        text_out = self.translate(text)
+        before = self._refusals()
+        reply = self.ctl("command", text_out)
+        if CHAT_REFUSAL.lower() in json.dumps(reply).lower() or self._refusals() > before:
+            raise RuntimeError("client refused command (%s): %s" % (CHAT_REFUSAL, text))
         return None
 
     def wait_ready(self, seconds=60):
