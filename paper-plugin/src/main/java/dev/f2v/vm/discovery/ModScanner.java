@@ -1057,7 +1057,10 @@ public final class ModScanner {
         // nested jar. Keep concrete *Screen classes, but never promote every GuiGraphics helper,
         // widget, row or overlay into a standalone screen asset.
         String simpleClientName = node.name.substring(node.name.lastIndexOf('/') + 1);
+        // Only when the superclass is UNRESOLVED: a resolved non-Screen parent
+        // (GuiInnerScreen -> GuiScalableElement -> GuiElement) is a widget, not a screen.
         boolean unresolvedNamedScreen = simpleClientName.endsWith("Screen")
+                && (node.superName == null || !nodes.containsKey(node.superName))
                 && node.methods.stream().anyMatch(method -> method.desc != null
                 && method.desc.contains("Lnet/minecraft/client/gui/GuiGraphics;"));
         boolean be = isSubclass(node, "net/minecraft/world/level/block/entity/BlockEntity", nodes);
