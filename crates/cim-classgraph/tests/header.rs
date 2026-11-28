@@ -45,3 +45,14 @@ fn rejects_unknown_constant_tag() {
     b[10] = 99;
     assert!(matches!(parse_header(&b), Err(HeaderError::BadTag(99, 1))));
 }
+
+#[test]
+fn large_constant_pool_parses_fully() {
+    let long: Vec<String> = (0..40).map(|i| format!("p/{}{}", "x".repeat(200), i)).collect();
+    let refs: Vec<&str> = long.iter().map(String::as_str).collect();
+    let b = class_file("Big/Class", Some("Big/Super"), &refs, 0x21, false);
+    assert!(b.len() > 8192);
+    let h = parse_header(&b).unwrap();
+    assert_eq!(h.interfaces.len(), 40);
+    assert_eq!(h.interfaces[39], long[39]);
+}

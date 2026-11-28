@@ -277,6 +277,7 @@ public final class ModScanner {
         }
         archives.addAll(VanillaArchives.resolve());
         if (archives.isEmpty()) return scan(jarPath, null);
+        NativeClassIndex.ensure(archives, Path.of(System.getProperty("user.dir", ".")).toAbsolutePath().normalize());
         try (CrossJarClassPath classPath = CrossJarClassPath.index(archives)) {
             return scan(jarPath, classPath);
         }
@@ -1243,20 +1244,21 @@ public final class ModScanner {
     private static boolean isSubclassName(String type, String root, Map<String, ClassNode> nodes) {
         if (type == null || root == null) return false;
         if (root.equals(type)) return true;
+        // Native answers only positives: the Java walk keeps the built-in vanilla shortcut roots
+        // (VANILLA_*_ROOTS) that the index cannot see when a vanilla archive is absent.
+        if (Boolean.TRUE.equals(NativeClassIndex.isSubclass(type, root))) return true;
         String current = type;
         Set<String> seen = new HashSet<>();
         while (current != null && seen.add(current)) {
             ClassNode candidate = nodes == null ? null : nodes.get(current);
-            if (candidate == null) {
-                String builtin = VanillaArchives.clientSuperclass(current);
-                if (builtin == null) break;
-                if (root.equals(builtin)) return true;
-                current = builtin;
-                continue;
-            }
+            if (candidate == null) break;
             if (root.equals(candidate.superName)) return true;
             current = candidate.superName;
         }
+        return hasBlockEntityCtor(type, nodes);
+    }
+
+    private static boolean hasBlockEntityCtor(String type, Map<String, ClassNode> nodes) {
         ClassNode candidate = nodes == null ? null : nodes.get(type);
         if (candidate != null && candidate.methods != null) {
             for (MethodNode method : candidate.methods) {
@@ -1330,6 +1332,7 @@ public final class ModScanner {
 
     private static boolean isSubclass(ClassNode node, String target, Map<String, ClassNode> nodes) {
         if (node == null || target == null) return false;
+        if (Boolean.TRUE.equals(NativeClassIndex.isSubclass(node.name, target))) return true;
         Set<String> seen = new HashSet<>();
         java.util.ArrayDeque<String> pending = new java.util.ArrayDeque<>();
         if (node.superName != null) pending.addLast(node.superName);
@@ -1345,11 +1348,7 @@ public final class ModScanner {
             if (VANILLA_ENTITY_ROOTS.contains(cur) && cur.startsWith("net/minecraft/world/entity/")
                     && target.equals("net/minecraft/world/entity/Entity")) return true;
             ClassNode parent = nodes.get(cur);
-            if (parent == null) {
-                String builtin = VanillaArchives.clientSuperclass(cur);
-                if (builtin != null) pending.addLast(builtin);
-                continue;
-            }
+            if (parent == null) continue;
             if (parent.superName != null) pending.addLast(parent.superName);
             if (parent.interfaces != null) {
                 for (String iface : parent.interfaces) if (iface != null) pending.addLast(iface);

@@ -7,7 +7,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Stream;
 
@@ -22,40 +21,14 @@ import java.util.stream.Stream;
  *   <li>the vanilla 1.21.1 client jar in {@code cache/} (fetched once, see {@link VanillaClientJar});</li>
  *   <li>the Paper 26.3 cache jar, only as a last resort (different version, logged).</li>
  * </ol>
- * Client-only classes (Screen, ConfirmScreen, AbstractContainerScreen ...) are not in any server
- * archive, so {@link #clientSuperclass(String)} supplies their superclass from a small built-in
- * table of vanilla 1.21.1 screen types. The table is consulted only when the class is not
- * present in the scanned archives.
+ * Client-only classes (Screen, ConfirmScreen, AbstractContainerScreen ...) come from the vanilla
+ * client jar when it is cached. When it is absent (offline) the scan runs without it and logs
+ * once; there is no built-in class table.
  */
 final class VanillaArchives {
     private VanillaArchives() {}
 
     private static final AtomicBoolean LOGGED = new AtomicBoolean();
-
-    private static final String SCREEN = "net/minecraft/client/gui/screens/Screen";
-    private static final String CONTAINER_SCREEN =
-            "net/minecraft/client/gui/screens/inventory/AbstractContainerScreen";
-    private static final String ITEM_COMBINER_SCREEN =
-            "net/minecraft/client/gui/screens/inventory/ItemCombinerScreen";
-    private static final String EFFECT_INVENTORY_SCREEN =
-            "net/minecraft/client/gui/screens/inventory/EffectRenderingInventoryScreen";
-
-    /** Vanilla 1.21.1 client screen -> direct superclass (generic vanilla types, not mod code).
-     *  Verified with javap against the vanilla 1.21.1 client srg jar (client-1.21.1-20240808.144430-srg.jar). */
-    private static final Map<String, String> CLIENT_SUPERCLASSES = Map.ofEntries(
-            Map.entry("net/minecraft/client/gui/screens/ConfirmScreen", SCREEN),
-            Map.entry(CONTAINER_SCREEN, SCREEN),
-            Map.entry(ITEM_COMBINER_SCREEN, CONTAINER_SCREEN),
-            Map.entry("net/minecraft/client/gui/screens/inventory/CraftingScreen", CONTAINER_SCREEN),
-            Map.entry(EFFECT_INVENTORY_SCREEN, CONTAINER_SCREEN),
-            Map.entry("net/minecraft/client/gui/screens/inventory/InventoryScreen", EFFECT_INVENTORY_SCREEN),
-            Map.entry("net/minecraft/client/gui/screens/inventory/AbstractFurnaceScreen", CONTAINER_SCREEN),
-            Map.entry("net/minecraft/client/gui/screens/inventory/AnvilScreen", ITEM_COMBINER_SCREEN));
-
-    /** Superclass of a vanilla client class from the built-in table, or null when unknown. */
-    static String clientSuperclass(String internalName) {
-        return internalName == null ? null : CLIENT_SUPERCLASSES.get(internalName);
-    }
 
     /** Resolves the archives to add to the cross-jar index for every scan. Logs its decision once. */
     static List<Path> resolve() {
@@ -99,7 +72,7 @@ final class VanillaArchives {
             }
         }
         if (LOGGED.compareAndSet(false, true)) F2VLog.warn("[vm] no vanilla archive found under " + userDir
-                + "; scanning without vanilla (client superclasses from the built-in table only)");
+                + "; scanning without vanilla (no client jar cached)");
         return out;
     }
 

@@ -66,6 +66,11 @@ impl Index {
         self.classes.get(name)
     }
 
+    /// True when `name` is an indexed class.
+    pub fn knows(&self, name: &str) -> bool {
+        self.classes.contains_key(name)
+    }
+
     pub fn source_of(&self, name: &str) -> Option<&str> {
         self.classes.get(name).map(|c| self.sources[c.source as usize].as_str())
     }
@@ -212,8 +217,24 @@ struct JarResult {
     labels: Vec<String>,
 }
 
-fn scan_archive_bytes(data: &[u8], label: &str, depth: u32, out: &mut JarResult) -> Result<(), zip::result::ZipError> {
-    let mut zip = zip::ZipArchive::new(Cursor::new(data))?;
+/// Read the header prefix of a class entry: grows the read until the parser has
+/// the constant pool, so only the inflated prefix of each class is decompressed.
+fn read_class_header(file: &mut impl Read) -> Option<header::Header> {
+    let mut buf: Vec<u8> = Vec::new();
+    let mut limit = 4096usize;
+    loop {
+        let want = limit - buf.len();
+        let got = (&mut *file).take(want as u64).read_to_end(&mut buf).ok()?;
+        match parse_header(&buf) {
+            Ok(h) => return Some(h),
+            Err(HeaderError::Truncated) if got == want => limit *= 2,
+            Err(_) => return None,
+        }
+    }
+}
+
+fn scan_archive_file<R: Read + std::io::Seek>(reader: R, label: &str, depth: u32, out: &mut JarResult) -> Result<(), zip::result::ZipError> {
+    let mut zip = zip::ZipArchive::new(reader)?;
     let src = out.labels.len() as u32;
     out.labels.push(label.to_string());
     let mut nested: Vec<(String, Vec<u8>)> = Vec::new();
@@ -224,11 +245,7 @@ fn scan_archive_bytes(data: &[u8], label: &str, depth: u32, out: &mut JarResult)
         }
         let name = file.name().to_string();
         if name.ends_with(".class") && !name.starts_with("META-INF/") && name != "module-info.class" {
-            let mut buf = Vec::with_capacity(file.size() as usize);
-            if file.read_to_end(&mut buf).is_err() {
-                continue;
-            }
-            let Ok(h) = parse_header(&buf) else { continue };
+            let Some(h) = read_class_header(&mut file) else { continue };
             // Multi-release copies under META-INF/versions are not indexed.
             out.entries.push((
                 h.name,
@@ -244,7 +261,7 @@ fn scan_archive_bytes(data: &[u8], label: &str, depth: u32, out: &mut JarResult)
     drop(zip);
     for (child_label, bytes) in nested {
         // A broken nested jar must not poison its parent.
-        let _ = scan_archive_bytes(&bytes, &child_label, depth + 1, out);
+        let _ = scan_archive_file(Cursor::new(bytes), &child_label, depth + 1, out);
     }
     Ok(())
 }
@@ -252,8 +269,8 @@ fn scan_archive_bytes(data: &[u8], label: &str, depth: u32, out: &mut JarResult)
 fn scan_jar_file(path: &Path) -> JarResult {
     let mut out = JarResult { entries: Vec::new(), labels: Vec::new() };
     let label = path.to_string_lossy().into_owned();
-    if let Ok(bytes) = fs::read(path) {
-        let _ = scan_archive_bytes(&bytes, &label, 0, &mut out);
+    if let Ok(file) = fs::File::open(path) {
+        let _ = scan_archive_file(std::io::BufReader::new(file), &label, 0, &mut out);
     }
     out
 }

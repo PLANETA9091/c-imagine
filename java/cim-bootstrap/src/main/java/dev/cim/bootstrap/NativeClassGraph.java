@@ -1,7 +1,5 @@
 package dev.cim.bootstrap;
 
-import java.util.Arrays;
-
 /**
  * Bridge to the Rust class-hierarchy index in {@code libimagine.so} (crate {@code cim-classgraph}).
  *
@@ -77,6 +75,11 @@ public final class NativeClassGraph {
         return ensureLoaded() && isSubclass0(cls, target);
     }
 
+    /** True when {@code cls} is an indexed class; {@code false} when unavailable. */
+    public static boolean known(String cls) {
+        return ensureLoaded() && known0(cls);
+    }
+
     /** Transitive ancestors in BFS order; empty when unavailable. */
     public static String[] ancestors(String cls) {
         if (!ensureLoaded()) {
@@ -92,10 +95,6 @@ public final class NativeClassGraph {
         return mask != null && mask.length == 1 && mask[0] != 0;
     }
 
-    static String describe(String[] jars) {
-        return Arrays.toString(jars);
-    }
-
     private static native int build0(String[] jars, String cacheDir);
 
     private static native int[] classify0(String[] classes, String[] roots);
@@ -103,4 +102,6 @@ public final class NativeClassGraph {
     private static native boolean isSubclass0(String cls, String target);
 
     private static native String[] ancestors0(String cls);
+
+    private static native boolean known0(String cls);
 }

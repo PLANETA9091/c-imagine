@@ -24,8 +24,6 @@ public final class VanillaArchivesSelfTest {
                         .anyMatch(c -> c.endsWith("CraftingRobitContainer")));
         System.out.println("ClothRequiresRestartScreen resolved as screen: " + screen);
         System.out.println("CraftingRobitContainer resolved as menu: " + menu);
-        System.out.println("resolver table: " + VanillaArchives.clientSuperclass(
-                "net/minecraft/client/gui/screens/ConfirmScreen"));
         if (!screen || !menu) {
             System.out.println("VanillaArchivesSelfTest FAILED");
             System.exit(1);

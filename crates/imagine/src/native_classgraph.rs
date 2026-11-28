@@ -156,3 +156,18 @@ pub unsafe extern "system" fn Java_dev_cim_bootstrap_NativeClassGraph_ancestors0
     }
     arr.into_raw()
 }
+
+/// `static native boolean known0(String cls);` true when the class is in the index.
+///
+/// # Safety
+/// Standard JNI contract.
+#[unsafe(no_mangle)]
+pub unsafe extern "system" fn Java_dev_cim_bootstrap_NativeClassGraph_known0<'local>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    cls: JString<'local>,
+) -> jboolean {
+    let Some(idx) = current() else { return 0 };
+    let Ok(c) = jstr(&mut env, cls) else { return 0 };
+    idx.knows(&c) as jboolean
+}
