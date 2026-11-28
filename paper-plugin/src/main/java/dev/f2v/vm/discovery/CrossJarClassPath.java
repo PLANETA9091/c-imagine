@@ -57,7 +57,14 @@ final class CrossJarClassPath implements AutoCloseable {
                 }
             });
     private final Set<String> failed = java.util.concurrent.ConcurrentHashMap.newKeySet();
-    private final JarAccess.Session session = JarAccess.session();
+    /** One archive session per worker thread: a Session is not thread-safe, and a single shared
+     * session serialized every parallel scan on one lock. All sessions are closed by close(). */
+    private final List<JarAccess.Session> openSessions = Collections.synchronizedList(new ArrayList<>());
+    private final ThreadLocal<JarAccess.Session> session = ThreadLocal.withInitial(() -> {
+        JarAccess.Session created = JarAccess.session();
+        openSessions.add(created);
+        return created;
+    });
     private final String fingerprint;
 
     private CrossJarClassPath(Map<String, Location> locations, String fingerprint) {
@@ -165,9 +172,7 @@ final class CrossJarClassPath implements AutoCloseable {
         if (location == null) return null;
         try {
             byte[] bytes;
-            synchronized (session) {
-                bytes = session.read(location.archive(), location.entry());
-            }
+            bytes = session.get().read(location.archive(), location.entry());
             if (bytes == null || bytes.length == 0) {
                 failed.add(className);
                 return null;
@@ -308,7 +313,8 @@ final class CrossJarClassPath implements AutoCloseable {
 
     @Override
     public void close() {
-        session.close();
+        for (JarAccess.Session open : openSessions) open.close();
+        openSessions.clear();
         synchronized (parsed) {
             parsed.clear();
         }

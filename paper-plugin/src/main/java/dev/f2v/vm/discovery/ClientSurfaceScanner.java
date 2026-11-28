@@ -567,12 +567,12 @@ public final class ClientSurfaceScanner {
         boolean clientAnnotation = clientAnnotation(node.visibleAnnotations)
                 || clientAnnotation(node.invisibleAnnotations);
         boolean clientEntrypoint = node.interfaces != null && node.interfaces.stream().anyMatch(value ->
-                value != null && value.toLowerCase(Locale.ROOT).endsWith("/clientmodinitializer"));
+                value != null && LowerCase.of(value).endsWith("/clientmodinitializer"));
         // Follow known ancestors, but also accept an unresolved GUI *Screen base from an embedded
         // client library. This is the same conservative test used for action targets and avoids
         // classifying network payloads that merely happen to end in "Screen".
         boolean screen = isScreenType(node.name, nodes);
-        String lowerClass = node.name.toLowerCase(Locale.ROOT);
+        String lowerClass = LowerCase.of(node.name);
         boolean clientPath = lowerClass.contains("/client/") || lowerClass.endsWith("client")
                 || lowerClass.contains("clientonly");
 
@@ -599,7 +599,7 @@ public final class ClientSurfaceScanner {
         boolean clientMixinEvidence = !surface.mixinTargets.isEmpty()
                 && (clientPath || clientAnnotation || clientEntrypoint || hasClientReference
                 || surface.mixinTargets.stream().anyMatch(target -> isClientReference(target)
-                || target.toLowerCase(Locale.ROOT).contains("/client/")));
+                || LowerCase.of(target).contains("/client/")));
         if (!clientMixinEvidence) {
             surface.hooks.removeIf(hook -> hook != null && hook.mixinInjection);
             surface.kinds.clear();
@@ -1029,12 +1029,12 @@ public final class ClientSurfaceScanner {
         boolean tied = false;
         for (String candidate : candidates) {
             if (candidate == null || candidate.isBlank()) continue;
-            String lowerCandidate = candidate.toLowerCase(Locale.ROOT);
+            String lowerCandidate = LowerCase.of(candidate);
             int score = 0;
             for (String literal : literals) {
                 if (literal == null || literal.isBlank()) continue;
                 if (candidate.equals(literal)) score += 100;
-                String lower = literal.toLowerCase(Locale.ROOT);
+                String lower = LowerCase.of(literal);
                 if (!lower.matches("[a-z0-9_.-]+")) continue;
                 if (lowerCandidate.startsWith(lower + ".")) score += 20;
                 if (lowerCandidate.endsWith("." + lower)) score += 40;
@@ -4365,11 +4365,11 @@ public final class ClientSurfaceScanner {
     private static CollectionMutation collectionMutationBefore(MethodInsnNode mutation,
                                                                AbstractInsnNode floorInclusive) {
         if (mutation == null || mutation.name == null || mutation.desc == null) return null;
-        String operation = mutation.name.toLowerCase(Locale.ROOT);
+        String operation = LowerCase.of(mutation.name);
         if (!(operation.equals("add") || operation.equals("remove"))) return null;
         if (!mutation.desc.startsWith("(Ljava/lang/Object;)")
                 && !mutation.desc.startsWith("(Ljava/lang/Object;I)")) return null;
-        String owner = mutation.owner == null ? "" : mutation.owner.toLowerCase(Locale.ROOT);
+        String owner = mutation.owner == null ? "" : LowerCase.of(mutation.owner);
         if (!(owner.startsWith("java/util/") || owner.contains("collection")
                 || owner.contains("list") || owner.contains("set"))) return null;
 
@@ -4419,7 +4419,7 @@ public final class ClientSurfaceScanner {
         for (String screen : facts.screens) {
             addAction(surface, ActionType.OPEN_SCREEN, key, method, screen, confidence);
             surface.kinds.add(Kind.SCREEN);
-            if (mapSemantic(screen.toLowerCase(Locale.ROOT))) surface.kinds.add(Kind.MAP);
+            if (mapSemantic(LowerCase.of(screen))) surface.kinds.add(Kind.MAP);
         }
         for (String url : facts.externalUrls) {
             addAction(surface, ActionType.OPEN_URL, key, method, url, confidence);
@@ -5453,7 +5453,7 @@ public final class ClientSurfaceScanner {
     }
 
     private static WidgetStateField widgetStateFieldName(String fieldName) {
-        String name = fieldName == null ? "" : fieldName.toLowerCase(Locale.ROOT);
+        String name = fieldName == null ? "" : LowerCase.of(fieldName);
         if (name.equals("visible") || name.contains("visible") || name.equals("f_93624_")) {
             return WidgetStateField.VISIBLE;
         }
@@ -5633,7 +5633,7 @@ public final class ClientSurfaceScanner {
         for (MethodNode method : owner.methods) {
             if (method == null || method.instructions == null || "<init>".equals(method.name)
                     || "<clinit>".equals(method.name) || looksLikeWidgetInit(method)) continue;
-            String name = method.name == null ? "" : method.name.toLowerCase(Locale.ROOT);
+            String name = method.name == null ? "" : LowerCase.of(method.name);
             if (name.contains("tick") || name.contains("update") || name.contains("refresh")) {
                 if (selected.add(method)) queue.add(method);
             }
@@ -6125,7 +6125,7 @@ public final class ClientSurfaceScanner {
         } catch (IllegalArgumentException ignored) {
             return false;
         }
-        String lowerName = field.name == null ? "" : field.name.toLowerCase(Locale.ROOT);
+        String lowerName = field.name == null ? "" : LowerCase.of(field.name);
         if (lowerName.contains("blockentity") || lowerName.contains("tileentity")) return true;
         return likelyServerTargetType(type, nodes, new HashSet<>(), 0);
     }
@@ -6348,7 +6348,7 @@ public final class ClientSurfaceScanner {
             return false;
         }
         String desc = method.desc == null ? "" : method.desc;
-        String name = method.name == null ? "" : method.name.toLowerCase(Locale.ROOT);
+        String name = method.name == null ? "" : LowerCase.of(method.name);
         if ("(DD)V".equals(desc) || "(DDI)Z".equals(desc)) return true;
         return "()V".equals(desc) && (name.contains("click") || name.contains("press"));
     }
@@ -7190,7 +7190,7 @@ public final class ClientSurfaceScanner {
 
     private static boolean layoutFieldMethod(MethodNode method, Map<String, ClassNode> nodes) {
         if (looksLikeWidgetInit(method) || constructsWidget(method, nodes)) return true;
-        String name = method.name == null ? "" : method.name.toLowerCase(Locale.ROOT);
+        String name = method.name == null ? "" : LowerCase.of(method.name);
         return name.contains("setbutton") || name.contains("buildwidget")
                 || name.contains("setupwidget") || name.contains("layoutwidget");
     }
@@ -7379,7 +7379,7 @@ public final class ClientSurfaceScanner {
                 }
             }
             if ("I".equals(field.desc) && isScreenType(field.owner, nodes)) {
-                String name = field.name == null ? "" : field.name.toLowerCase(Locale.ROOT);
+                String name = field.name == null ? "" : LowerCase.of(field.name);
                 if (name.contains("guileft") || name.contains("leftpos") || name.equals("f_97735_")) {
                     return UiValue.anchored(UiBasis.START_X, 0);
                 }
@@ -7420,7 +7420,7 @@ public final class ClientSurfaceScanner {
             boolean screenOwner = isScreenType(call.owner, nodes);
             boolean guiExtentOwner = !screenOwner && guiDimensionAccessorOwner(call.owner);
             if (!screenOwner && !guiExtentOwner) return UiValue.unknown(1);
-            String name = call.name == null ? "" : call.name.toLowerCase(Locale.ROOT);
+            String name = call.name == null ? "" : LowerCase.of(call.name);
             if (screenOwner && (name.contains("guileft") || name.contains("leftpos")
                     || name.equals("getguileft"))) {
                 return UiValue.anchored(UiBasis.START_X, 0);
@@ -7453,7 +7453,7 @@ public final class ClientSurfaceScanner {
             boolean height = false;
             boolean guiRender = false;
             for (MethodNode method : owner.methods) {
-                String name = method.name == null ? "" : method.name.toLowerCase(Locale.ROOT);
+                String name = method.name == null ? "" : LowerCase.of(method.name);
                 if ("()I".equals(method.desc) && name.equals("getwidth")) width = true;
                 if ("()I".equals(method.desc) && name.equals("getheight")) height = true;
                 if (method.desc != null && method.desc.contains("Lnet/minecraft/client/gui/GuiGraphics;")) {
@@ -7501,7 +7501,7 @@ public final class ClientSurfaceScanner {
 
     private static boolean looksLikeWidgetInit(MethodNode method) {
         if (method == null || method.instructions == null) return false;
-        String name = method.name == null ? "" : method.name.toLowerCase(Locale.ROOT);
+        String name = method.name == null ? "" : LowerCase.of(method.name);
         if (name.equals("init") || name.contains("initwidgets") || name.contains("addwidgets")) return true;
         // Obfuscated production names cannot be trusted. Presence of a clickable widget callback
         // is the semantic signal and still keeps this analysis scoped to screen subclasses.
@@ -7515,8 +7515,8 @@ public final class ClientSurfaceScanner {
 
     private static boolean looksLikeClickableWidgetConstructor(MethodInsnNode ctor) {
         if (ctor == null || ctor.desc == null) return false;
-        String owner = ctor.owner == null ? "" : ctor.owner.toLowerCase(Locale.ROOT);
-        String desc = ctor.desc.toLowerCase(Locale.ROOT);
+        String owner = ctor.owner == null ? "" : LowerCase.of(ctor.owner);
+        String desc = LowerCase.of(ctor.desc);
         return desc.contains("button$onpress") || desc.contains("pressablewidget")
                 || desc.contains("onpress") || (owner.contains("button")
                 && (desc.contains("function") || desc.contains("consumer")))
@@ -7533,9 +7533,9 @@ public final class ClientSurfaceScanner {
         if (call == null || call.desc == null || "<init>".equals(call.name)) return false;
         String returned = returnedObject(call.desc);
         if (!isWidgetType(returned, nodes)) return false;
-        String lowerType = returned.toLowerCase(Locale.ROOT);
+        String lowerType = LowerCase.of(returned);
         if (lowerType.endsWith("$builder") || lowerType.endsWith("builder")) return false;
-        String name = call.name == null ? "" : call.name.toLowerCase(Locale.ROOT);
+        String name = call.name == null ? "" : LowerCase.of(call.name);
         if (name.contains("addrenderable") || name.contains("addwidget")
                 || name.contains("register")) return false;
 
@@ -7549,12 +7549,12 @@ public final class ClientSurfaceScanner {
             return methodProducesFreshWidget(call, nodes, new HashSet<>(), 0);
         }
 
-        String descriptor = call.desc.toLowerCase(Locale.ROOT);
+        String descriptor = LowerCase.of(call.desc);
         if (descriptor.contains("java/lang/runnable")
                 || descriptor.contains("java/util/function/")
                 || descriptor.contains("onpress") || name.contains("build")
                 || name.contains("create") || name.equals("of") || name.startsWith("m_")) return true;
-        String owner = call.owner == null ? "" : call.owner.toLowerCase(Locale.ROOT);
+        String owner = call.owner == null ? "" : LowerCase.of(call.owner);
         if (owner.endsWith("builder") || owner.contains("$builder") || owner.endsWith("factory")) return true;
         return methodProducesFreshWidget(call, nodes, new HashSet<>(), 0);
     }
@@ -7599,7 +7599,7 @@ public final class ClientSurfaceScanner {
         Set<String> seen = new HashSet<>();
         String current = type;
         while (current != null && seen.add(current)) {
-            String lower = current.toLowerCase(Locale.ROOT);
+            String lower = LowerCase.of(current);
             if (lower.endsWith("/abstractwidget") || lower.endsWith("/abstractbutton")
                     || lower.contains("button") || lower.contains("checkbox")
                     || lower.contains("slider") || lower.contains("scrollinput")
@@ -7625,7 +7625,7 @@ public final class ClientSurfaceScanner {
         for (int index = 0; index < queue.size() && index < 48; index++) {
             String current = queue.get(index);
             if (current == null || !seen.add(current)) continue;
-            String lower = current.toLowerCase(Locale.ROOT);
+            String lower = LowerCase.of(current);
             if (lower.endsWith("/guieventlistener") || lower.endsWith("/eventlistener")
                     || lower.endsWith("/narratableentry") || lower.endsWith("/renderable")) {
                 eventContract = true;
@@ -7659,7 +7659,7 @@ public final class ClientSurfaceScanner {
         }
         if (integers >= 4) return LayoutMutationKind.BOUNDS;
         if (integers == 0) return LayoutMutationKind.NONE;
-        String name = call.name == null ? "" : call.name.toLowerCase(Locale.ROOT);
+        String name = call.name == null ? "" : LowerCase.of(call.name);
         if (integers == 2) {
             if (name.contains("size") || name.contains("dimension")) return LayoutMutationKind.SIZE;
             if (name.contains("bound")) return LayoutMutationKind.BOUNDS;
@@ -7730,7 +7730,7 @@ public final class ClientSurfaceScanner {
     }
 
     private static LayoutMutationKind layoutFieldKind(String fieldName) {
-        String name = fieldName == null ? "" : fieldName.toLowerCase(Locale.ROOT);
+        String name = fieldName == null ? "" : LowerCase.of(fieldName);
         if (name.equals("x") || name.equals("left") || name.equals("f_93620_")) return LayoutMutationKind.X;
         if (name.equals("y") || name.equals("top") || name.equals("f_93621_")) return LayoutMutationKind.Y;
         if (name.equals("width") || name.equals("f_93618_")) return LayoutMutationKind.WIDTH;
@@ -7752,7 +7752,7 @@ public final class ClientSurfaceScanner {
 
     private static boolean callbackRegistration(MethodInsnNode call, Map<String, ClassNode> nodes) {
         if (call == null || call.desc == null || "<init>".equals(call.name)) return false;
-        String name = call.name == null ? "" : call.name.toLowerCase(Locale.ROOT);
+        String name = call.name == null ? "" : LowerCase.of(call.name);
         if (!acceptsCallbackArgument(call, nodes)) return false;
         if (isWidgetType(call.owner, nodes) || isWidgetType(returnedObject(call.desc), nodes)
                 || builderLikeType(call.owner, nodes)) return true;
@@ -7775,7 +7775,7 @@ public final class ClientSurfaceScanner {
         for (Type argument : arguments) {
             if (argument.getSort() != Type.OBJECT) continue;
             String type = argument.getInternalName();
-            String lower = type.toLowerCase(Locale.ROOT);
+            String lower = LowerCase.of(type);
             // Suppliers provide presentation/data lazily (tooltip text, labels, values); invoking
             // them is not a user action. Treating a Supplier passed to a widget setter as another
             // click callback creates phantom interactions beside the widget's real Runnable/Consumer.
@@ -7803,7 +7803,7 @@ public final class ClientSurfaceScanner {
 
     private static boolean builderLikeType(String type, Map<String, ClassNode> nodes) {
         if (type == null) return false;
-        String lower = type.toLowerCase(Locale.ROOT);
+        String lower = LowerCase.of(type);
         if (lower.endsWith("builder") || lower.contains("$builder") || lower.endsWith("factory")) return true;
         ClassNode node = nodes == null ? null : nodes.get(type);
         if (node == null || node.methods == null) return false;
@@ -8044,7 +8044,7 @@ public final class ClientSurfaceScanner {
 
     private static boolean looksLikeComponentDescriptor(String descriptor) {
         if (descriptor == null) return false;
-        String lower = descriptor.toLowerCase(Locale.ROOT);
+        String lower = LowerCase.of(descriptor);
         return lower.contains("network/chat/component") || lower.contains("mutablecomponent");
     }
 
@@ -8062,7 +8062,7 @@ public final class ClientSurfaceScanner {
                         && !field.name.matches("f_\\d+_?")) {
                     String semantic = field.name.replaceFirst("^[iI]_", "")
                             .replace('_', ' ').trim();
-                    if (semantic.length() >= 3) return semantic.toLowerCase(Locale.ROOT);
+                    if (semantic.length() >= 3) return LowerCase.of(semantic);
                 }
             }
             if (previous instanceof LdcInsnNode ldc && ldc.cst instanceof String text
@@ -9377,8 +9377,8 @@ public final class ClientSurfaceScanner {
     }
 
     private static boolean isGameNetworkSend(MethodInsnNode call) {
-        String owner = call.owner.toLowerCase(Locale.ROOT);
-        String name = call.name.toLowerCase(Locale.ROOT);
+        String owner = LowerCase.of(call.owner);
+        String name = LowerCase.of(call.name);
         if (name.contains("sendtoserver")) return true;
         // Client packet APIs frequently spell the same C2S boundary as sendPacketToServer,
         // sendMessageToServer, etc. Accept that name shape only when the method actually carries
@@ -9438,7 +9438,7 @@ public final class ClientSurfaceScanner {
                 if ("java/lang/Record".equals(type)
                         || "net/minecraft/network/protocol/common/custom/CustomPacketPayload".equals(type)
                         || "net/minecraft/network/protocol/Packet".equals(type)) return true;
-                String lower = type.toLowerCase(Locale.ROOT);
+                String lower = LowerCase.of(type);
                 int slash = lower.lastIndexOf('/');
                 String simple = slash < 0 ? lower : lower.substring(slash + 1);
                 if (simple.contains("packet") || simple.contains("payload")
@@ -9497,7 +9497,7 @@ public final class ClientSurfaceScanner {
             for (Type argument : Type.getArgumentTypes(descriptor)) {
                 if (argument.getSort() != Type.OBJECT) continue;
                 String type = argument.getInternalName();
-                String lower = type.toLowerCase(Locale.ROOT);
+                String lower = LowerCase.of(type);
                 int slash = lower.lastIndexOf('/');
                 String simple = slash < 0 ? lower : lower.substring(slash + 1);
                 if ("java/lang/Record".equals(type)
@@ -9555,7 +9555,7 @@ public final class ClientSurfaceScanner {
      * to well-known transport class shapes rather than package/mod ids. */
     private static boolean isNetworkTransportType(String type) {
         if (type == null || type.isBlank()) return false;
-        String lower = type.toLowerCase(Locale.ROOT).replace('.', '/');
+        String lower = LowerCase.of(type).replace('.', '/');
         String simple = lower.substring(lower.lastIndexOf('/') + 1);
         return simple.equals("simplechannel")
                 || simple.equals("eventnetworkchannel")
@@ -9602,7 +9602,7 @@ public final class ClientSurfaceScanner {
 
     private static boolean desktopUiType(String type) {
         if (type == null) return false;
-        String lower = type.toLowerCase(Locale.ROOT);
+        String lower = LowerCase.of(type);
         return lower.startsWith("javax/swing/") || lower.startsWith("java/awt/")
                 || lower.startsWith("javafx/") || lower.startsWith("org/eclipse/swt/");
     }
@@ -9614,7 +9614,7 @@ public final class ClientSurfaceScanner {
      */
     private static boolean looksLikeScreenName(String type) {
         if (type == null) return false;
-        String lower = type.toLowerCase(Locale.ROOT);
+        String lower = LowerCase.of(type);
         boolean uiPath = lower.startsWith("net/minecraft/client/") || lower.contains("/client/");
         if (!uiPath) {
             for (String token : UI_PATH_TOKENS) {
@@ -9641,7 +9641,7 @@ public final class ClientSurfaceScanner {
 
     private static boolean isKeyMappingType(String type) {
         if (type == null) return false;
-        String lower = type.toLowerCase(Locale.ROOT);
+        String lower = LowerCase.of(type);
         return lower.endsWith("/keymapping") || lower.endsWith("/keybinding")
                 || lower.endsWith("/hotkey") || lower.endsWith("/hotkeybinding")
                 || lower.contains("client/keymapping") || lower.contains("client/option/keybinding");
@@ -9678,8 +9678,8 @@ public final class ClientSurfaceScanner {
         collectAnnotationReferences(method.invisibleAnnotations, refs, surface.mixinTargets);
         boolean methodClientAnnotation = clientAnnotation(method.visibleAnnotations)
                 || clientAnnotation(method.invisibleAnnotations);
-        String name = method.name.toLowerCase(Locale.ROOT);
-        String desc = method.desc.toLowerCase(Locale.ROOT);
+        String name = LowerCase.of(method.name);
+        String desc = LowerCase.of(method.desc);
         Hook hook = new Hook();
         hook.method = method.name;
         hook.descriptor = method.desc;
@@ -9719,8 +9719,8 @@ public final class ClientSurfaceScanner {
             if (instruction instanceof MethodInsnNode call) {
                 collectClassReference(call.owner, refs);
                 collectDescriptor(call.desc, refs);
-                String callName = call.name.toLowerCase(Locale.ROOT);
-                String owner = call.owner.toLowerCase(Locale.ROOT);
+                String callName = LowerCase.of(call.name);
+                String owner = LowerCase.of(call.owner);
                 if (callName.contains("sendtoserver")
                         || owner.contains("clientpacketlistener") && callName.equals("send")) {
                     hook.kinds.add(Kind.NETWORK);
@@ -9742,12 +9742,12 @@ public final class ClientSurfaceScanner {
             } else if (instruction instanceof FieldInsnNode field) {
                 collectClassReference(field.owner, refs);
                 collectDescriptor(field.desc, refs);
-                String owner = field.owner.toLowerCase(Locale.ROOT);
+                String owner = LowerCase.of(field.owner);
                 if (owner.contains("keymapping") || owner.contains("keybinding")
                         || owner.contains("hotkey")) keyMappingMethod = true;
             } else if (instruction instanceof TypeInsnNode type) {
                 collectClassReference(type.desc, refs);
-                String typeName = type.desc.toLowerCase(Locale.ROOT);
+                String typeName = LowerCase.of(type.desc);
                 if (typeName.contains("keymapping") || typeName.contains("keybinding")
                         || typeName.contains("hotkey")) {
                     keyMappingMethod = true;
@@ -9795,7 +9795,7 @@ public final class ClientSurfaceScanner {
         boolean widgetAttachment = false;
         for (MethodNode method : node.methods) {
             if (method == null || method.name == null) continue;
-            String name = method.name.toLowerCase(Locale.ROOT);
+            String name = LowerCase.of(method.name);
             if (name.equals("init") || name.equals("m_7856_")) init = true;
             if (name.contains("render") || name.contains("draw") || inputMethodName(name)
                     || name.equals("onclose") || name.equals("removed")) {
@@ -9803,7 +9803,7 @@ public final class ClientSurfaceScanner {
             }
             for (AbstractInsnNode instruction : method.instructions) {
                 if (!(instruction instanceof MethodInsnNode call) || call.name == null) continue;
-                String called = call.name.toLowerCase(Locale.ROOT);
+                String called = LowerCase.of(call.name);
                 if (called.contains("addrenderablewidget") || called.contains("addrenderableonly")
                         || called.equals("addwidget") || called.contains("setinitialfocus")) {
                     widgetAttachment = true;
@@ -9817,7 +9817,7 @@ public final class ClientSurfaceScanner {
         if (annotations == null) return false;
         for (AnnotationNode annotation : annotations) {
             if (annotation == null || annotation.desc == null) continue;
-            String lower = annotation.desc.toLowerCase(Locale.ROOT);
+            String lower = LowerCase.of(annotation.desc);
             if (lower.contains("spongepowered/asm/mixin/overwrite")
                     || lower.contains("spongepowered/asm/mixin/injection/inject")
                     || lower.contains("spongepowered/asm/mixin/injection/redirect")
@@ -9835,7 +9835,7 @@ public final class ClientSurfaceScanner {
         if (annotations == null || out == null) return;
         for (AnnotationNode annotation : annotations) {
             if (annotation == null || annotation.desc == null) continue;
-            String lowerDesc = annotation.desc.toLowerCase(Locale.ROOT);
+            String lowerDesc = LowerCase.of(annotation.desc);
             if (!(lowerDesc.contains("spongepowered/asm/mixin/injection/")
                     || lowerDesc.contains("mixinextras/injector"))) continue;
             LinkedHashSet<String> strings = new LinkedHashSet<>();
@@ -9861,7 +9861,7 @@ public final class ClientSurfaceScanner {
 
     private static void addHookKindsFromSemantic(String value, Set<Kind> out) {
         if (value == null || out == null) return;
-        String lower = value.toLowerCase(Locale.ROOT);
+        String lower = LowerCase.of(value);
         int paren = lower.indexOf('(');
         String method = paren >= 0 ? lower.substring(0, paren) : lower;
         int slash = Math.max(method.lastIndexOf('/'), method.lastIndexOf('.'));
@@ -9882,7 +9882,7 @@ public final class ClientSurfaceScanner {
 
     private static boolean mapBehaviorMethod(MethodNode method) {
         if (method == null || method.name == null) return false;
-        String name = method.name.toLowerCase(Locale.ROOT);
+        String name = LowerCase.of(method.name);
         if (mapSemantic(name) || name.contains("waypoint")
                 || name.contains("mapzoom") || name.contains("mapcenter")) return true;
         for (AbstractInsnNode instruction : method.instructions) {
@@ -9891,7 +9891,7 @@ public final class ClientSurfaceScanner {
             else if (instruction instanceof FieldInsnNode field) owner = field.owner;
             else if (instruction instanceof TypeInsnNode type) owner = type.desc;
             if (owner == null) continue;
-            String lower = owner.toLowerCase(Locale.ROOT);
+            String lower = LowerCase.of(owner);
             // A helper merely living inside a world-map package is not enough: Xaero's
             // CrosshairMessageOverlay is a HUD owned by the world-map jar but is not itself map
             // rendering. Require a map-specific referenced type/manager here; class/method names
@@ -9906,8 +9906,8 @@ public final class ClientSurfaceScanner {
      * ProcessBuilder or mentioning JNA/LWJGL types is not itself a launch. */
     private static RuntimeLaunch runtimeLaunch(MethodInsnNode call) {
         if (call == null || call.owner == null || call.name == null) return null;
-        String owner = call.owner.toLowerCase(Locale.ROOT);
-        String name = call.name.toLowerCase(Locale.ROOT);
+        String owner = LowerCase.of(call.owner);
+        String name = LowerCase.of(call.name);
         String target = call.owner + '#' + call.name + call.desc;
         if (owner.equals("java/lang/runtime") && name.equals("exec")) {
             return new RuntimeLaunch(ActionType.LAUNCH_PROCESS, target);
@@ -9939,8 +9939,8 @@ public final class ClientSurfaceScanner {
      */
     private static boolean externalNetworkCall(MethodInsnNode call) {
         if (call == null || call.owner == null || call.name == null) return false;
-        String owner = call.owner.toLowerCase(Locale.ROOT);
-        String name = call.name.toLowerCase(Locale.ROOT);
+        String owner = LowerCase.of(call.owner);
+        String name = LowerCase.of(call.name);
 
         if (owner.equals("java/net/url")) {
             return name.equals("openconnection") || name.equals("openstream") || name.equals("getcontent");
@@ -9975,8 +9975,8 @@ public final class ClientSurfaceScanner {
      * system are compatibility risks for a server-side client stand-in. */
     private static boolean localFilesystemCall(MethodInsnNode call) {
         if (call == null || call.owner == null || call.name == null) return false;
-        String owner = call.owner.toLowerCase(Locale.ROOT);
-        String name = call.name.toLowerCase(Locale.ROOT);
+        String owner = LowerCase.of(call.owner);
+        String name = LowerCase.of(call.name);
         if (owner.equals("java/nio/file/files")) return true;
         if (owner.equals("java/nio/channels/filechannel")) return name.equals("open");
         if (owner.equals("java/io/fileinputstream") || owner.equals("java/io/fileoutputstream")
@@ -10001,8 +10001,8 @@ public final class ClientSurfaceScanner {
      * bytecode actually performs reflective lookup/invocation or dynamic class loading. */
     private static boolean dynamicReflectionCall(MethodInsnNode call) {
         if (call == null || call.owner == null || call.name == null) return false;
-        String owner = call.owner.toLowerCase(Locale.ROOT);
-        String name = call.name.toLowerCase(Locale.ROOT);
+        String owner = LowerCase.of(call.owner);
+        String name = LowerCase.of(call.name);
         if (owner.equals("java/lang/classloader")) {
             return name.equals("loadclass") || name.equals("findclass") || name.equals("defineclass")
                     || name.equals("findsystemclass") || name.equals("getsystemclassloader");
@@ -10043,7 +10043,7 @@ public final class ClientSurfaceScanner {
             else if (instruction instanceof FieldInsnNode field) owner = field.owner;
             else if (instruction instanceof TypeInsnNode type) owner = type.desc;
             if (owner == null) continue;
-            String lower = owner.toLowerCase(Locale.ROOT);
+            String lower = LowerCase.of(owner);
             if (lower.contains("keymapping") || lower.contains("keybinding")
                     || lower.endsWith("/hotkey") || lower.contains("hotkeybinding")) return true;
         }
@@ -10054,7 +10054,7 @@ public final class ClientSurfaceScanner {
         if (method == null || method.instructions == null) return false;
         for (AbstractInsnNode instruction : method.instructions) {
             if (!(instruction instanceof MethodInsnNode call) || call.name == null) continue;
-            String name = call.name.toLowerCase(Locale.ROOT).replace("_", "");
+            String name = LowerCase.of(call.name).replace("_", "");
             if (name.contains("registerkeymapping") || name.contains("registerkeybinding")
                     || name.contains("registerhotkey") || name.equals("addhotkey")
                     || name.equals("bindhotkey")) return true;
@@ -10070,7 +10070,7 @@ public final class ClientSurfaceScanner {
         for (int i = 0; i < text.length(); i++) {
             if (Character.isWhitespace(text.charAt(i))) return false;
         }
-        String lower = text.toLowerCase(Locale.ROOT);
+        String lower = LowerCase.of(text);
         if (lower.startsWith("key.categories.") || lower.startsWith("category.")) return false;
         if (lower.endsWith(".category") || lower.contains(".category.")) return false;
         if (lower.startsWith("key.")) return true;
@@ -10082,7 +10082,7 @@ public final class ClientSurfaceScanner {
 
     private static void classifyReference(String ref, ClassSurface surface) {
         if (ref == null) return;
-        String lower = ref.toLowerCase(Locale.ROOT);
+        String lower = LowerCase.of(ref);
         if (isClientReference(ref)) addClientReference(surface, ref);
         if (lower.contains("keymapping") || lower.contains("keybinding")
                 || lower.contains("registerkeymapping") || lower.contains("hotkey")) {
@@ -10195,7 +10195,7 @@ public final class ClientSurfaceScanner {
                 || lowerClass.contains("gui"))) surface.kinds.add(Kind.CONFIG);
         if (clientEvidence && mapSemantic(lowerClass)) surface.kinds.add(Kind.MAP);
         for (String key : surface.keybinds) {
-            if (mapSemantic(key.toLowerCase(Locale.ROOT))) surface.kinds.add(Kind.MAP);
+            if (mapSemantic(LowerCase.of(key))) surface.kinds.add(Kind.MAP);
         }
     }
 
@@ -10241,7 +10241,7 @@ public final class ClientSurfaceScanner {
     private static boolean clientAnnotation(List<AnnotationNode> annotations) {
         if (annotations == null) return false;
         for (AnnotationNode annotation : annotations) {
-            String desc = annotation.desc == null ? "" : annotation.desc.toLowerCase(Locale.ROOT);
+            String desc = annotation.desc == null ? "" : LowerCase.of(annotation.desc);
             boolean sideAnnotation = desc.contains("distmarker/onlyin")
                     || desc.contains("fabricmc/api/environment")
                     || desc.contains("eventbussubscriber")
@@ -10260,7 +10260,7 @@ public final class ClientSurfaceScanner {
         for (AnnotationNode annotation : annotations) {
             if (annotation == null) continue;
             boolean mixin = annotation.desc != null
-                    && annotation.desc.toLowerCase(Locale.ROOT).contains("spongepowered/asm/mixin/mixin");
+                    && LowerCase.of(annotation.desc).contains("spongepowered/asm/mixin/mixin");
             collectAnnotationValue(annotation.values, refs, mixin ? mixinTargets : null);
         }
     }
@@ -10625,15 +10625,15 @@ public final class ClientSurfaceScanner {
                     // MAP is key-specific. Large client mods often register every hotkey in one
                     // class; inheriting MAP from a sibling "open map" key would make zoom/config
                     // keys incorrectly open F2V's full-screen map.
-                    if (kind != Kind.MAP || mapSemantic(candidate.toLowerCase(Locale.ROOT))) {
+                    if (kind != Kind.MAP || mapSemantic(LowerCase.of(candidate))) {
                         out.add(kind);
                     }
                 }
-                if (mapSemantic(candidate.toLowerCase(Locale.ROOT))
+                if (mapSemantic(LowerCase.of(candidate))
                         || surface.actions.stream().anyMatch(action -> action.type == ActionType.OPEN_SCREEN
                         && action.keybind != null && normalizeKey(action.keybind).equals(wanted)
                         && action.target != null
-                        && mapSemantic(action.target.toLowerCase(Locale.ROOT)))) {
+                        && mapSemantic(LowerCase.of(action.target)))) {
                     out.add(Kind.MAP);
                 }
             }
@@ -10789,7 +10789,7 @@ public final class ClientSurfaceScanner {
         boolean dynamicTexture = false;
         boolean textureManager = false;
         for (String reference : surface.clientReferences) {
-            String lower = reference == null ? "" : reference.toLowerCase(Locale.ROOT);
+            String lower = reference == null ? "" : LowerCase.of(reference);
             image |= lower.contains("nativeimage");
             dynamicTexture |= lower.contains("dynamictexture");
             textureManager |= lower.contains("texturemanager");
@@ -10826,7 +10826,7 @@ public final class ClientSurfaceScanner {
     }
 
     private static String normalizeKey(String value) {
-        return value.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]", "");
+        return LowerCase.of(value).replaceAll("[^a-z0-9]", "");
     }
 
     /** Writes the machine-readable translation inventory consumed by diagnostics and future

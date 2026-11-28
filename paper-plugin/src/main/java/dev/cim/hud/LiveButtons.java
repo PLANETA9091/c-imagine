@@ -47,13 +47,12 @@ public final class LiveButtons {
             jars = st.filter(p -> p.toString().endsWith(".jar")).sorted().toList();
         }
         List<Stateful> out = new ArrayList<>();
-        for (Path jar : jars) {
-            ModScanner.Profile profile;
-            try {
-                profile = ModScanner.scan(jar);
-            } catch (Exception e) {
-                continue;
-            }
+        // Scans run in parallel (ModScanner.scanEach keeps jar order); a failed jar is null.
+        List<ModScanner.Profile> scanned = ModScanner.scanEach(jars);
+        for (int ji = 0; ji < jars.size(); ji++) {
+            Path jar = jars.get(ji);
+            ModScanner.Profile profile = scanned.get(ji);
+            if (profile == null) continue;
             Map<String, List<String>> menuOf = menus(profile);
             for (ClientSurfaceScanner.ClassSurface surface : profile.clientSurfaces) {
                 for (ClientSurfaceScanner.Action a : surface.actions) {
@@ -97,13 +96,12 @@ public final class LiveButtons {
             jars = s.filter(p -> p.toString().endsWith(".jar")).sorted().toList();
         }
         List<Button> out = new ArrayList<>();
-        for (Path jar : jars) {
-            ModScanner.Profile profile;
-            try {
-                profile = ModScanner.scan(jar);
-            } catch (Exception e) {
-                continue;
-            }
+        // Scans run in parallel (ModScanner.scanEach keeps jar order); a failed jar is null.
+        List<ModScanner.Profile> scanned = ModScanner.scanEach(jars);
+        for (int ji = 0; ji < jars.size(); ji++) {
+            Path jar = jars.get(ji);
+            ModScanner.Profile profile = scanned.get(ji);
+            if (profile == null) continue;
             Map<String, List<String>> menuOf = new HashMap<>();
             for (ModScanner.ScreenInfo i : profile.screens) {
                 List<String> menus = new ArrayList<>();
@@ -229,13 +227,12 @@ public final class LiveButtons {
             jars = st.filter(p -> p.toString().endsWith(".jar")).sorted().toList();
         }
         List<String> out = new ArrayList<>();
-        for (Path jar : jars) {
-            ModScanner.Profile profile;
-            try {
-                profile = ModScanner.scan(jar);
-            } catch (Exception e) {
-                continue;
-            }
+        // Scans run in parallel (ModScanner.scanEach keeps jar order); a failed jar is null.
+        List<ModScanner.Profile> scanned = ModScanner.scanEach(jars);
+        for (int ji = 0; ji < jars.size(); ji++) {
+            Path jar = jars.get(ji);
+            ModScanner.Profile profile = scanned.get(ji);
+            if (profile == null) continue;
             for (ClientSurfaceScanner.ClassSurface surface : profile.clientSurfaces) {
                 for (ClientSurfaceScanner.Action a : surface.actions) {
                     if (a.widgetActivePredicate != null || a.widgetVisiblePredicate != null) {

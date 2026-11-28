@@ -700,11 +700,15 @@ public final class ScreenPack {
         }
         Map<String, List<Piece>> shared = new HashMap<>();
         Map<String, List<Icon>> iconsByClass = new HashMap<>();
-        for (Path jar : jars) {
+        // Every jar is scanned up front in parallel (order kept); the per-jar work below then runs
+        // on the finished profiles exactly as before.
+        List<ModScanner.Profile> scanned = ModScanner.scanAll(jars);
+        for (int ji = 0; ji < jars.size(); ji++) {
+            Path jar = jars.get(ji);
             Map<String, byte[]> textures = new HashMap<>();
             Map<String, byte[]> classes = new HashMap<>();
             readTextures(Files.readAllBytes(jar), textures, classes, 0);
-            ModScanner.Profile profile = ModScanner.scan(jar);
+            ModScanner.Profile profile = scanned.get(ji);
             Map<String, GuiSpriteBytecodeScanner.Sprite> sprites = new HashMap<>();
             for (GuiSpriteBytecodeScanner.Sprite s : profile.guiSprites) {
                 sprites.put(s.owner + "." + s.field, s);

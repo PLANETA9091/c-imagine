@@ -437,8 +437,8 @@ public final class BehaviorBytecodeScanner {
                 }
                 addInvocation(out, call, owner, method, valueFlow, nodes);
                 List<BytecodeValueFlow.Value> packets = List.of();
-                String lowerOwner = call.owner.toLowerCase(Locale.ROOT);
-                String lowerName = call.name.toLowerCase(Locale.ROOT);
+                String lowerOwner = LowerCase.of(call.owner);
+                String lowerName = LowerCase.of(call.name);
                 if (serverSend(lowerOwner, lowerName, call.desc)
                         || clientSend(lowerOwner, lowerName, call.desc)) {
                     packets = new ArrayList<>();
@@ -655,8 +655,8 @@ public final class BehaviorBytecodeScanner {
                                            boolean entityClass, boolean projectileClass,
                                            boolean particleClass) {
         String desc = method.desc == null ? "" : method.desc;
-        String lowerDesc = desc.toLowerCase(Locale.ROOT);
-        String lowerName = method.name == null ? "" : method.name.toLowerCase(Locale.ROOT);
+        String lowerDesc = LowerCase.of(desc);
+        String lowerName = method.name == null ? "" : LowerCase.of(method.name);
 
         if (lowerDesc.contains("inputevent$mousebutton") || lowerDesc.contains("mousebuttonevent")
                 || lowerDesc.contains("mousebutton$pre") || lowerDesc.contains("mousebutton$event")) {
@@ -774,9 +774,9 @@ public final class BehaviorBytecodeScanner {
         String owner = call.owner == null ? "" : call.owner;
         String name = call.name == null ? "" : call.name;
         String desc = call.desc == null ? "" : call.desc;
-        String lowerOwner = owner.toLowerCase(Locale.ROOT);
-        String lowerName = name.toLowerCase(Locale.ROOT);
-        String lowerDesc = desc.toLowerCase(Locale.ROOT);
+        String lowerOwner = LowerCase.of(owner);
+        String lowerName = LowerCase.of(name);
+        String lowerDesc = LowerCase.of(desc);
 
         boolean ambiguousPayloadSend = ambiguousPayloadSend(lowerOwner, lowerName, desc);
         if (serverSend(lowerOwner, lowerName, desc)
@@ -1350,8 +1350,8 @@ public final class BehaviorBytecodeScanner {
 
     private static boolean registrationCall(MethodInsnNode call) {
         if (call == null || call.desc == null) return false;
-        String lowerOwner = call.owner.toLowerCase(Locale.ROOT);
-        String lowerName = call.name.toLowerCase(Locale.ROOT);
+        String lowerOwner = LowerCase.of(call.owner);
+        String lowerName = LowerCase.of(call.name);
         return lowerName.equals("register") && call.desc.contains("Ljava/lang/String;")
                 && (call.desc.contains("Ljava/util/function/Supplier;")
                 || lowerOwner.contains("deferredregister"));
@@ -1412,7 +1412,7 @@ public final class BehaviorBytecodeScanner {
     }
 
     private static boolean usefulImplementation(String name) {
-        String lower = name.toLowerCase(Locale.ROOT);
+        String lower = LowerCase.of(name);
         return !lower.contains("/init/") && !lower.endsWith("init")
                 && !lower.contains("builder") && !lower.contains("properties");
     }
@@ -1455,7 +1455,7 @@ public final class BehaviorBytecodeScanner {
 
     private static boolean packetHandlerDescriptor(String desc) {
         if (desc == null) return false;
-        String lower = desc.toLowerCase(Locale.ROOT);
+        String lower = LowerCase.of(desc);
         return lower.contains("networkevent$context") || lower.contains("payloadcontext")
                 || lower.contains("packetcontext")
                 || lower.contains("custompayload") && lower.contains("context");
@@ -1468,7 +1468,7 @@ public final class BehaviorBytecodeScanner {
     private static boolean clientPacketHandlerDescriptor(MethodNode method,
                                                          Map<String, ClassNode> nodes) {
         if (method == null || method.desc == null || method.name == null) return false;
-        String name = method.name.toLowerCase(Locale.ROOT);
+        String name = LowerCase.of(method.name);
         if (!(name.equals("handle") || name.equals("handler") || name.equals("process")
                 || name.equals("receive"))) return false;
         Type[] args;
@@ -1505,7 +1505,7 @@ public final class BehaviorBytecodeScanner {
 
     private static boolean renderDescriptor(String desc) {
         if (desc == null) return false;
-        String lower = desc.toLowerCase(Locale.ROOT);
+        String lower = LowerCase.of(desc);
         return lower.contains("posestack") || lower.contains("vertexconsumer")
                 || lower.contains("multibuffersource") || lower.contains("guigraphics")
                 || lower.contains("renderlevelstageevent") || lower.contains("renderguievent");
@@ -1525,7 +1525,7 @@ public final class BehaviorBytecodeScanner {
      * with a class-name fallback for legacy SimpleChannel-style message classes. */
     private static boolean payloadClass(String type, Map<String, ClassNode> nodes) {
         if (type == null || type.isBlank()) return false;
-        String lower = type.toLowerCase(Locale.ROOT);
+        String lower = LowerCase.of(type);
         if (lower.startsWith("java/") || lower.startsWith("javax/")
                 || lower.startsWith("net/minecraft/client/")) return false;
         String simple = lower.substring(lower.lastIndexOf('/') + 1);
@@ -1537,7 +1537,7 @@ public final class BehaviorBytecodeScanner {
         Set<String> seen = new HashSet<>();
         String current = type;
         while (current != null && seen.add(current)) {
-            String currentLower = current.toLowerCase(Locale.ROOT);
+            String currentLower = LowerCase.of(current);
             if (currentLower.contains("custompacketpayload")
                     || currentLower.endsWith("/packet") || currentLower.endsWith("packet")
                     || currentLower.endsWith("payload")) return true;
@@ -1545,7 +1545,7 @@ public final class BehaviorBytecodeScanner {
             if (node == null) break;
             if (node.interfaces != null) {
                 for (String iface : node.interfaces) {
-                    String ifaceLower = iface == null ? "" : iface.toLowerCase(Locale.ROOT);
+                    String ifaceLower = iface == null ? "" : LowerCase.of(iface);
                     if (ifaceLower.contains("custompacketpayload")
                             || ifaceLower.endsWith("/packet") || ifaceLower.endsWith("payload")) {
                         return true;
@@ -1561,7 +1561,7 @@ public final class BehaviorBytecodeScanner {
 
     private static boolean looksLikeScreenClass(String type) {
         if (type == null) return false;
-        String lower = type.toLowerCase(Locale.ROOT);
+        String lower = LowerCase.of(type);
         int slash = lower.lastIndexOf('/');
         String simple = slash < 0 ? lower : lower.substring(slash + 1);
         return (lower.contains("/screen/") || lower.contains("/gui/"))
@@ -1618,7 +1618,7 @@ public final class BehaviorBytecodeScanner {
 
     private static boolean resourceLike(String value) {
         if (value == null || value.isBlank() || value.length() > 180) return false;
-        String lower = value.toLowerCase(Locale.ROOT);
+        String lower = LowerCase.of(value);
         return lower.matches("[a-z0-9_.-]+:[a-z0-9_./-]+")
                 || lower.contains("textures/") || lower.contains("models/")
                 || lower.contains("particles/") || lower.endsWith(".png")
@@ -1629,7 +1629,7 @@ public final class BehaviorBytecodeScanner {
     private static String firstInterestingSubject(Set<String> resources, String token) {
         if (resources == null) return null;
         for (String value : resources) {
-            if (value != null && value.toLowerCase(Locale.ROOT).contains(token)) return value;
+            if (value != null && LowerCase.of(value).contains(token)) return value;
         }
         return null;
     }

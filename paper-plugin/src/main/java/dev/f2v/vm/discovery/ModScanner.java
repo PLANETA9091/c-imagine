@@ -301,21 +301,84 @@ public final class ModScanner {
         return fresh;
     }
 
+    /** Worker count for jar scans: -Df2v.scanThreads, else available cores minus one (min 1). */
+    static int scanThreads() {
+        Integer configured = Integer.getInteger("f2v.scanThreads");
+        if (configured != null && configured > 0) return configured;
+        return Math.max(1, Runtime.getRuntime().availableProcessors() - 1);
+    }
+
     /**
-     * Scans several jars in parallel (bounded by ParallelPackWork's pool, i.e. the core count).
-     * Results keep the input order. Each jar shares the one cross-jar index built on first use.
+     * Scans several jars in parallel on their own pool (scanThreads). Results keep input order;
+     * the first failure is rethrown, like a serial loop of scan(jar).
      */
     public static List<Profile> scanAll(List<Path> jars) throws IOException {
+        List<Profile> out = scanEach(jars, true);
+        return out;
+    }
+
+    /**
+     * Parallel variant that tolerates failures: a jar whose scan throws yields null in its slot,
+     * the same as a per-jar catch-and-continue loop. Results keep input order.
+     */
+    public static List<Profile> scanEach(List<Path> jars) {
         try {
-            return dev.f2v.pack.ParallelPackWork.mapOrdered(jars, jar -> {
+            return scanEach(jars, false);
+        } catch (IOException impossible) {
+            throw new IllegalStateException(impossible);
+        }
+    }
+
+    private static List<Profile> scanEach(List<Path> jars, boolean strict) throws IOException {
+        if (jars == null || jars.isEmpty()) return new ArrayList<>();
+        int threads = Math.min(scanThreads(), jars.size());
+        if (threads <= 1) {
+            List<Profile> serial = new ArrayList<>(jars.size());
+            for (Path jar : jars) {
                 try {
-                    return scan(jar);
-                } catch (IOException failure) {
-                    throw new java.io.UncheckedIOException(failure);
+                    serial.add(scan(jar));
+                } catch (IOException | RuntimeException failure) {
+                    if (strict) {
+                        if (failure instanceof IOException io) throw io;
+                        throw (RuntimeException) failure;
+                    }
+                    serial.add(null);
                 }
-            });
-        } catch (java.io.UncheckedIOException failure) {
-            throw failure.getCause();
+            }
+            return serial;
+        }
+        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(threads, runnable -> {
+            Thread thread = new Thread(runnable, "f2v-jar-scan");
+            thread.setDaemon(true);
+            thread.setContextClassLoader(ModScanner.class.getClassLoader());
+            return thread;
+        });
+        try {
+            List<java.util.concurrent.Future<Profile>> futures = new ArrayList<>(jars.size());
+            for (Path jar : jars) {
+                java.util.concurrent.Callable<Profile> task = () -> scan(jar);
+                futures.add(pool.submit(task));
+            }
+            List<Profile> out = new ArrayList<>(jars.size());
+            for (java.util.concurrent.Future<Profile> future : futures) {
+                try {
+                    out.add(future.get());
+                } catch (java.util.concurrent.ExecutionException failure) {
+                    Throwable cause = failure.getCause();
+                    if (strict) {
+                        if (cause instanceof IOException io) throw io;
+                        if (cause instanceof RuntimeException rt) throw rt;
+                        throw new IOException(cause);
+                    }
+                    out.add(null);
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    throw new IOException("jar scan interrupted", interrupted);
+                }
+            }
+            return out;
+        } finally {
+            pool.shutdownNow();
         }
     }
 
