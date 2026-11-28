@@ -748,30 +748,40 @@ final class ObjMesh {
             int pwSnap = 0;
             int phSnap = 0;
             boolean snapped = false;
-            if (wallChannel && Math.abs(n[2]) > 0.999
-                    && Math.abs(ex[0]) > 0.999 && Math.abs(ey[1]) > 0.999
-                    && Math.abs(ex[1]) < 1e-3 && Math.abs(ey[0]) < 1e-3) {
+            // THE PER-POLY DEPTH LAW: a wall-facing polygon's projected scale
+            // is its OWN g (the depth it sits at), not the content-plane
+            // average — the cage/brace struts one block deeper ride
+            // g=3.384 vs the content plane's 3.781, an 11% client minify when
+            // the tile was sized at the fixed ppu (S/pw = 0.887 — every ~9th
+            // screen px duplicates a tile px, the deep-strut staircase).
+            double wallG = -1;
+            if (wallChannel && Math.abs(n[2]) > 0.999) {
                 final double mzPlane = n[2] * dot(pts[0], n);
                 final double zw = WALL_CONTENT_Z + (16.0 - mzPlane) / 16.0;
                 if (zw - WALL_CAM_Z > 1.0) {
-                    final double g = WALL_F_PX / ((zw - WALL_CAM_Z) * 16.0);
-                    final double jx = -g;
-                    final double jy = -g;
-                    final int x0 = (int) Math.floor(Math.min(jx * aMin, jx * aMax));
-                    final int x1 = (int) Math.ceil(Math.max(jx * aMin, jx * aMax));
-                    final int y0 = (int) Math.floor(Math.min(jy * bMin, jy * bMax));
-                    final int y1 = (int) Math.ceil(Math.max(jy * bMin, jy * bMax));
-                    final int wSpan = x1 - x0;
-                    final int hSpan = y1 - y0;
-                    if (wSpan >= 2 && wSpan <= 184 && hSpan >= 2 && hSpan <= 184) {
-                        aLo = Math.min(x0 / jx, x1 / jx);
-                        aHi = Math.max(x0 / jx, x1 / jx);
-                        bLo = Math.min(y0 / jy, y1 / jy);
-                        bHi = Math.max(y0 / jy, y1 / jy);
-                        pwSnap = wSpan;
-                        phSnap = hSpan;
-                        snapped = true;
-                    }
+                    wallG = WALL_F_PX / ((zw - WALL_CAM_Z) * 16.0);
+                }
+            }
+            if (wallG > 0
+                    && Math.abs(ex[0]) > 0.999 && Math.abs(ey[1]) > 0.999
+                    && Math.abs(ex[1]) < 1e-3 && Math.abs(ey[0]) < 1e-3) {
+                final double g = wallG;
+                final double jx = -g;
+                final double jy = -g;
+                final int x0 = (int) Math.floor(Math.min(jx * aMin, jx * aMax));
+                final int x1 = (int) Math.ceil(Math.max(jx * aMin, jx * aMax));
+                final int y0 = (int) Math.floor(Math.min(jy * bMin, jy * bMax));
+                final int y1 = (int) Math.ceil(Math.max(jy * bMin, jy * bMax));
+                final int wSpan = x1 - x0;
+                final int hSpan = y1 - y0;
+                if (wSpan >= 2 && wSpan <= 184 && hSpan >= 2 && hSpan <= 184) {
+                    aLo = Math.min(x0 / jx, x1 / jx);
+                    aHi = Math.max(x0 / jx, x1 / jx);
+                    bLo = Math.min(y0 / jy, y1 / jy);
+                    bHi = Math.max(y0 / jy, y1 / jy);
+                    pwSnap = wSpan;
+                    phSnap = hSpan;
+                    snapped = true;
                 }
             }
             a0 = aLo;
@@ -781,6 +791,20 @@ final class ObjMesh {
             if (snapped) {
                 pw = pwSnap;
                 ph = phSnap;
+            } else if (wallG > 0) {
+            // THE PER-POLY DEPTH DENSITY (the fallback for the wall-facing
+            // polys the basis gate excludes — the chamfered first edges, the
+            // e284 receipt): the tile carries the polygon's OWN screen
+            // footprint (span*g, the depth-exact density) instead of the
+            // content-plane ppu — the client's resample becomes 1:1 for
+            // EVERY depth (S/pw = 1 ± 0.5/(span*g), the half-pixel floor
+            // the 3-f-retry law already owns), the deep-strut 0.887 minify
+            // staircase dies. The a/b bounds and the rect ride UNCHANGED —
+            // the e286 phase-lottery law is not touched (no lattice move,
+            // pixels only). The non-wall polys keep the legacy ppu path
+            // byte-identical (the perspective-trapezoid class).
+            pw = Math.max(2, Math.min(184, (int) Math.round((a1 - a0) * wallG)));
+            ph = Math.max(2, Math.min(184, (int) Math.round((b1 - b0) * wallG)));
             } else {
             // 3-f-retry: the tile is sized to the element's OUTPUT pixel
             // footprint, so each tile pixel IS one screen pixel and render()
