@@ -14,6 +14,16 @@ public final class VanillaArchivesSelfTest {
     public static void main(String[] args) throws Exception {
         if (args.length != 2) throw new IllegalArgumentException("usage: cloth.jar mekanism.jar");
         if (System.getProperty("f2v.vanillaJar") != null) throw new IllegalStateException("property must be unset");
+        // Native index (libimagine) when -Dcim.libimagine points at it; the Java walk otherwise.
+        String lib = System.getProperty("cim.libimagine");
+        if (lib != null) {
+            try {
+                Class.forName("dev.cim.bootstrap.NativeClassGraph")
+                        .getMethod("setup", String.class).invoke(null, lib);
+            } catch (ReflectiveOperationException e) {
+                throw new IllegalStateException("native class index not on the classpath", e);
+            }
+        }
         ModScanner.Profile cloth = ModScanner.scan(Path.of(args[0]));
         boolean screen = cloth.screens.stream().anyMatch(s ->
                 s.screenClass != null && s.screenClass.endsWith("ClothRequiresRestartScreen"));

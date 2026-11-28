@@ -45,6 +45,8 @@ public final class VanillaClientJar {
 
     public static final String MINECRAFT_VERSION = "1.21.1";
     public static final String CACHE_FILE = "vanilla-client-" + MINECRAFT_VERSION + ".jar";
+    /** Mojang's official ProGuard client mappings (named classes for the obfuscated client jar). */
+    public static final String MAPPINGS_FILE = "vanilla-client-" + MINECRAFT_VERSION + ".mappings.txt";
     public static final String MANIFEST_URL = "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json";
     /** Upper bound a scan waits for an in-flight download before continuing without the jar. */
     static final Duration WAIT = Duration.ofSeconds(120);
@@ -87,6 +89,16 @@ public final class VanillaClientJar {
         return new Ref(requireString(client, "url"), requireString(client, "sha1").toLowerCase(Locale.ROOT), size);
     }
 
+    /** The {@code downloads.client_mappings} entry of a version json, or null when absent. */
+    public static Ref parseClientMappings(String versionJson) {
+        JsonObject root = JsonParser.parseString(versionJson).getAsJsonObject();
+        JsonObject downloads = root.getAsJsonObject("downloads");
+        JsonObject map = downloads == null ? null : downloads.getAsJsonObject("client_mappings");
+        if (map == null) return null;
+        long size = map.has("size") ? map.get("size").getAsLong() : -1L;
+        return new Ref(requireString(map, "url"), requireString(map, "sha1").toLowerCase(Locale.ROOT), size);
+    }
+
     /** True when {@code data} hashes to {@code expectedHex} (case-insensitive). */
     public static boolean sha1Matches(byte[] data, String expectedHex) {
         return expectedHex != null && sha1Hex(data).equalsIgnoreCase(expectedHex);
@@ -109,32 +121,62 @@ public final class VanillaClientJar {
      */
     public static Path ensure(Path cacheDir, Http http) throws IOException, InterruptedException {
         Path target = cacheDir.resolve(CACHE_FILE);
-        if (Files.isRegularFile(target)) return target;
+        Path mappings = cacheDir.resolve(MAPPINGS_FILE);
+        if (Files.isRegularFile(target) && Files.isRegularFile(mappings)) return target;
         byte[] manifest = http.get(MANIFEST_URL);
         Ref versionRef = parseManifest(new String(manifest, StandardCharsets.UTF_8), MINECRAFT_VERSION);
         byte[] versionJson = http.get(versionRef.url());
         if (versionRef.sha1() != null && !sha1Matches(versionJson, versionRef.sha1())) {
             throw new IOException("version json sha1 mismatch for " + MINECRAFT_VERSION);
         }
-        Ref client = parseClientDownload(new String(versionJson, StandardCharsets.UTF_8));
-        byte[] jar = http.get(client.url());
-        if (!sha1Matches(jar, client.sha1())) {
-            throw new IOException("client jar sha1 mismatch: expected " + client.sha1()
-                    + " got " + sha1Hex(jar));
+        String versionText = new String(versionJson, StandardCharsets.UTF_8);
+        if (!Files.isRegularFile(target)) {
+            Ref client = parseClientDownload(versionText);
+            byte[] jar = http.get(client.url());
+            if (!sha1Matches(jar, client.sha1())) {
+                throw new IOException("client jar sha1 mismatch: expected " + client.sha1()
+                        + " got " + sha1Hex(jar));
+            }
+            if (client.size() >= 0 && jar.length != client.size()) {
+                throw new IOException("client jar size mismatch: expected " + client.size() + " got " + jar.length);
+            }
+            writeAtomic(cacheDir, CACHE_FILE, jar);
         }
-        if (client.size() >= 0 && jar.length != client.size()) {
-            throw new IOException("client jar size mismatch: expected " + client.size() + " got " + jar.length);
+        if (!Files.isRegularFile(mappings)) {
+            // Without mappings the jar still scans (obfuscated names only); the next boot retries.
+            try {
+                Ref map = parseClientMappings(versionText);
+                if (map == null) throw new IOException("version json has no downloads.client_mappings");
+                byte[] text = http.get(map.url());
+                if (!sha1Matches(text, map.sha1())) {
+                    throw new IOException("mappings sha1 mismatch: expected " + map.sha1() + " got " + sha1Hex(text));
+                }
+                writeAtomic(cacheDir, MAPPINGS_FILE, text);
+            } catch (IOException mappingFailure) {
+                F2VLog.warn("[vm] vanilla client mappings not fetched (" + mappingFailure.getMessage() + ")");
+            }
         }
+        return target;
+    }
+
+    private static void writeAtomic(Path cacheDir, String name, byte[] data) throws IOException {
         Files.createDirectories(cacheDir);
-        // Fixed .part name (not createTempFile) so the jar keeps the umask-default permissions.
-        Path tmp = cacheDir.resolve(CACHE_FILE + ".part");
+        // Fixed .part name (not createTempFile) so the file keeps the umask-default permissions.
+        Path tmp = cacheDir.resolve(name + ".part");
+        Path target = cacheDir.resolve(name);
         try {
-            Files.write(tmp, jar);
+            Files.write(tmp, data);
             Files.move(tmp, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
         } finally {
             Files.deleteIfExists(tmp);
         }
-        return target;
+    }
+
+    /** The cached client mappings next to a cached client jar, or null. */
+    public static Path mappingsFor(Path clientJar) {
+        if (clientJar == null) return null;
+        Path m = clientJar.resolveSibling(MAPPINGS_FILE);
+        return Files.isRegularFile(m) ? m : null;
     }
 
     /** Java HTTP client backed by {@link HttpClient}; non-200 responses fail. */
@@ -162,7 +204,8 @@ public final class VanillaClientJar {
         String explicit = System.getProperty("f2v.vanillaJar");
         if (explicit != null && !explicit.isBlank()) return;
         Path cacheDir = serverDir.toAbsolutePath().normalize().resolve("cache");
-        if (Files.isRegularFile(cacheDir.resolve(CACHE_FILE))) return;
+        if (Files.isRegularFile(cacheDir.resolve(CACHE_FILE))
+                && Files.isRegularFile(cacheDir.resolve(MAPPINGS_FILE))) return;
         CompletableFuture<Path> future = new CompletableFuture<>();
         if (!PENDING.compareAndSet(null, future)) return;
         Thread worker = new Thread(() -> {

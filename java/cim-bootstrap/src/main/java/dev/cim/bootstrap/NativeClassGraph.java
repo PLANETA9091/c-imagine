@@ -52,10 +52,18 @@ public final class NativeClassGraph {
      * @return indexed class count, or -1 when the native library is unavailable or the build failed
      */
     public static int build(String[] jars, String cacheDir) {
+        return buildMapped(jars, cacheDir, new String[0]);
+    }
+
+    /**
+     * As {@link #build}, plus {@code jarMappingPairs}: entries {@code "<jar>\t<proguard mapping>"}
+     * that rename that jar's obfuscated class names to the official names.
+     */
+    public static int buildMapped(String[] jars, String cacheDir, String[] jarMappingPairs) {
         if (!ensureLoaded()) {
             return -1;
         }
-        return build0(jars, cacheDir == null ? "" : cacheDir);
+        return build0(jars, cacheDir == null ? "" : cacheDir, jarMappingPairs == null ? new String[0] : jarMappingPairs);
     }
 
     /**
@@ -95,7 +103,7 @@ public final class NativeClassGraph {
         return mask != null && mask.length == 1 && mask[0] != 0;
     }
 
-    private static native int build0(String[] jars, String cacheDir);
+    private static native int build0(String[] jars, String cacheDir, String[] mappings);
 
     private static native int[] classify0(String[] classes, String[] roots);
 

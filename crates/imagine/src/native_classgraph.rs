@@ -41,8 +41,10 @@ fn jstr(env: &mut JNIEnv, s: JString) -> Result<String, String> {
     Ok(env.get_string(&s).map_err(|e| format!("get_string: {e}"))?.into())
 }
 
-/// `static native int build0(String[] jars, String cacheDir);`
-/// Builds (or loads from cache) the global index. Returns the class count, or -1.
+/// `static native int build0(String[] jars, String cacheDir, String[] mappings);`
+/// Builds (or loads from cache) the global index. `mappings` entries are `jar\tmapping`
+/// pairs: that jar's obfuscated class names are renamed through the ProGuard mapping file.
+/// Returns the class count, or -1.
 ///
 /// # Safety
 /// Standard JNI contract; arguments are valid references owned by the caller frame.
@@ -52,14 +54,22 @@ pub unsafe extern "system" fn Java_dev_cim_bootstrap_NativeClassGraph_build0<'lo
     _class: JClass<'local>,
     jars: JObjectArray<'local>,
     cache_dir: JString<'local>,
+    mappings: JObjectArray<'local>,
 ) -> jint {
     let run = (|| -> Result<usize, String> {
         let paths: Vec<PathBuf> = read_strings(&mut env, &jars)?.into_iter().map(PathBuf::from).collect();
+        let pairs: Vec<(PathBuf, PathBuf)> = read_strings(&mut env, &mappings)?
+            .into_iter()
+            .filter_map(|entry| {
+                let (jar, map) = entry.split_once('\t')?;
+                Some((PathBuf::from(jar), PathBuf::from(map)))
+            })
+            .collect();
         let cache = jstr(&mut env, cache_dir)?;
         let idx = if cache.is_empty() {
-            cim_classgraph::build(&paths)
+            cim_classgraph::build_mapped(&paths, &pairs)
         } else {
-            cim_classgraph::load_or_build(&paths, Path::new(&cache))
+            cim_classgraph::load_or_build_mapped(&paths, &pairs, Path::new(&cache))
         };
         let n = idx.len();
         *INDEX.write().map_err(|e| format!("lock: {e}"))? = Some(Arc::new(idx));

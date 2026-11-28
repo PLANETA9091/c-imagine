@@ -12,6 +12,9 @@
 //! [`Index::is_a`] is the reflexive form.
 
 pub mod header;
+pub mod mapping;
+
+use mapping::Mapping;
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs;
@@ -233,7 +236,13 @@ fn read_class_header(file: &mut impl Read) -> Option<header::Header> {
     }
 }
 
-fn scan_archive_file<R: Read + std::io::Seek>(reader: R, label: &str, depth: u32, out: &mut JarResult) -> Result<(), zip::result::ZipError> {
+fn scan_archive_file<R: Read + std::io::Seek>(
+    reader: R,
+    label: &str,
+    depth: u32,
+    out: &mut JarResult,
+    map: Option<&Mapping>,
+) -> Result<(), zip::result::ZipError> {
     let mut zip = zip::ZipArchive::new(reader)?;
     let src = out.labels.len() as u32;
     out.labels.push(label.to_string());
@@ -247,9 +256,13 @@ fn scan_archive_file<R: Read + std::io::Seek>(reader: R, label: &str, depth: u32
         if name.ends_with(".class") && !name.starts_with("META-INF/") && name != "module-info.class" {
             let Some(h) = read_class_header(&mut file) else { continue };
             // Multi-release copies under META-INF/versions are not indexed.
+            let rn = |n: &str| -> String { map.map_or_else(|| n.to_string(), |m| m.rename(n).to_string()) };
+            let name = rn(&h.name);
+            let super_name = h.super_name.as_deref().map(rn);
+            let interfaces = h.interfaces.iter().map(|i| rn(i)).collect();
             out.entries.push((
-                h.name,
-                ClassInfo { super_name: h.super_name, interfaces: h.interfaces, access: h.access, source: src },
+                name,
+                ClassInfo { super_name, interfaces, access: h.access, source: src },
             ));
         } else if name.ends_with(".jar") && depth < MAX_NESTING {
             let mut buf = Vec::new();
@@ -261,16 +274,16 @@ fn scan_archive_file<R: Read + std::io::Seek>(reader: R, label: &str, depth: u32
     drop(zip);
     for (child_label, bytes) in nested {
         // A broken nested jar must not poison its parent.
-        let _ = scan_archive_file(Cursor::new(bytes), &child_label, depth + 1, out);
+        let _ = scan_archive_file(Cursor::new(bytes), &child_label, depth + 1, out, map);
     }
     Ok(())
 }
 
-fn scan_jar_file(path: &Path) -> JarResult {
+fn scan_jar_file(path: &Path, map: Option<&Mapping>) -> JarResult {
     let mut out = JarResult { entries: Vec::new(), labels: Vec::new() };
     let label = path.to_string_lossy().into_owned();
     if let Ok(file) = fs::File::open(path) {
-        let _ = scan_archive_file(std::io::BufReader::new(file), &label, 0, &mut out);
+        let _ = scan_archive_file(std::io::BufReader::new(file), &label, 0, &mut out, map);
     }
     out
 }
@@ -278,11 +291,28 @@ fn scan_jar_file(path: &Path) -> JarResult {
 /// Build an index over `jars` (priority order: earlier jars win on duplicate names).
 /// Missing or unreadable jars are skipped.
 pub fn build(jars: &[PathBuf]) -> Index {
+    build_mapped(jars, &[])
+}
+
+/// Like [`build`], but each `(jar, mapping)` pair renames that jar's obfuscated class names
+/// through the ProGuard `mapping` file (Mojang client mappings for the obfuscated client jar).
+/// A mapping file that cannot be read is ignored for that jar.
+pub fn build_mapped(jars: &[PathBuf], mappings: &[(PathBuf, PathBuf)]) -> Index {
+    let maps: Vec<Option<Mapping>> = jars
+        .iter()
+        .map(|j| {
+            mappings
+                .iter()
+                .find(|(jar, _)| jar == j)
+                .and_then(|(_, m)| fs::read_to_string(m).ok())
+                .map(|text| Mapping::parse(&text))
+        })
+        .collect();
     let threads = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1).min(jars.len().max(1));
     let mut results: Vec<Option<JarResult>> = (0..jars.len()).map(|_| None).collect();
     if threads <= 1 || jars.len() <= 1 {
         for (i, j) in jars.iter().enumerate() {
-            results[i] = Some(scan_jar_file(j));
+            results[i] = Some(scan_jar_file(j, maps[i].as_ref()));
         }
     } else {
         let next = std::sync::atomic::AtomicUsize::new(0);
@@ -294,7 +324,7 @@ pub fn build(jars: &[PathBuf]) -> Index {
                     if i >= jars.len() {
                         break;
                     }
-                    let r = scan_jar_file(&jars[i]);
+                    let r = scan_jar_file(&jars[i], maps[i].as_ref());
                     slots.lock().unwrap()[i] = Some(r);
                 });
             }
@@ -322,9 +352,13 @@ struct CacheFile {
     classes: Vec<(String, ClassInfo)>,
 }
 
-/// Cache key over every jar's path, size and mtime (nanoseconds). Any change to
-/// an input jar yields a different key.
+/// Cache key over every jar's path, size and mtime (nanoseconds) and every mapping file's
+/// identity. Any change to an input yields a different key.
 pub fn cache_key(jars: &[PathBuf]) -> String {
+    cache_key_mapped(jars, &[])
+}
+
+pub fn cache_key_mapped(jars: &[PathBuf], mappings: &[(PathBuf, PathBuf)]) -> String {
     let mut h: u64 = 0xcbf2_9ce4_8422_2325; // FNV-1a 64
     let mut feed = |bytes: &[u8]| {
         for b in bytes {
@@ -335,9 +369,9 @@ pub fn cache_key(jars: &[PathBuf]) -> String {
         h = h.wrapping_mul(0x0000_0100_0000_01b3);
     };
     feed(format!("v{}", env!("CARGO_PKG_VERSION")).as_bytes());
-    for j in jars {
-        feed(j.to_string_lossy().as_bytes());
-        match fs::metadata(j) {
+    let feed_file = |feed: &mut dyn FnMut(&[u8]), path: &Path| {
+        feed(path.to_string_lossy().as_bytes());
+        match fs::metadata(path) {
             Ok(m) => {
                 feed(&m.len().to_le_bytes());
                 let mt = m
@@ -350,6 +384,14 @@ pub fn cache_key(jars: &[PathBuf]) -> String {
             }
             Err(_) => feed(b"missing"),
         }
+    };
+    for j in jars {
+        feed_file(&mut feed, j);
+    }
+    for (jar, map) in mappings {
+        feed(b"map");
+        feed_file(&mut feed, jar);
+        feed_file(&mut feed, map);
     }
     format!("{h:016x}")
 }
@@ -358,12 +400,16 @@ pub fn cache_key(jars: &[PathBuf]) -> String {
 /// otherwise build it and write the cache (atomically, via a temp file). Cache
 /// corruption or write failure falls back to a fresh build.
 pub fn load_or_build(jars: &[PathBuf], cache_dir: &Path) -> Index {
-    let key = cache_key(jars);
+    load_or_build_mapped(jars, &[], cache_dir)
+}
+
+pub fn load_or_build_mapped(jars: &[PathBuf], mappings: &[(PathBuf, PathBuf)], cache_dir: &Path) -> Index {
+    let key = cache_key_mapped(jars, mappings);
     let file = cache_dir.join(format!("classgraph-{key}.json"));
     if let Some(idx) = read_cache(&file, &key) {
         return idx;
     }
-    let idx = build(jars);
+    let idx = build_mapped(jars, mappings);
     let _ = write_cache(&file, &key, &idx);
     idx
 }

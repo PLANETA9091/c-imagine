@@ -21,7 +21,8 @@ final class NativeClassIndex {
     private static volatile boolean resolved;
     private static Method build;
     private static Method known;
-    private static Method isSubclass;
+    private static Method ancestorsOf;
+    private static final java.util.Map<String, List<String>> ANCESTORS = new java.util.concurrent.ConcurrentHashMap<>();
     private static String builtFor;
 
     private static void resolve() {
@@ -40,14 +41,14 @@ final class NativeClassIndex {
         }
         if (c == null) return;
         try {
-            Method b = c.getMethod("build", String[].class, String.class);
+            Method b = c.getMethod("buildMapped", String[].class, String.class, String[].class);
             Method k = c.getMethod("known", String.class);
-            Method s = c.getMethod("isSubclass", String.class, String.class);
+            Method s = c.getMethod("ancestors", String.class);
             Method av = c.getMethod("available");
             if (!(Boolean) av.invoke(null)) return;
             build = b;
             known = k;
-            isSubclass = s;
+            ancestorsOf = s;
         } catch (ReflectiveOperationException | RuntimeException | LinkageError e) {
             F2VLog.warn("[vm] native class index unavailable: " + e);
         }
@@ -72,10 +73,16 @@ final class NativeClassIndex {
                 .collect(Collectors.joining("\n"));
         if (key.equals(builtFor)) return true;
         Path cache = userDir == null ? null : userDir.resolve("cache").resolve("classgraph");
-        String[] jars = archives.stream().filter(Files::isRegularFile)
-                .map(p -> p.toAbsolutePath().normalize().toString()).toArray(String[]::new);
+        List<Path> present = archives.stream().filter(Files::isRegularFile).toList();
+        String[] jars = present.stream().map(p -> p.toAbsolutePath().normalize().toString()).toArray(String[]::new);
+        // Obfuscated client jars are renamed through the cached official mappings, when present.
+        String[] pairs = present.stream()
+                .filter(p -> VanillaClientJar.mappingsFor(p) != null)
+                .map(p -> p.toAbsolutePath().normalize() + "\t" + VanillaClientJar.mappingsFor(p).toAbsolutePath().normalize())
+                .toArray(String[]::new);
         try {
-            Object n = build.invoke(null, (Object) jars, cache == null ? "" : cache.toString());
+            Object n = build.invoke(null, (Object) jars, cache == null ? "" : cache.toString(), (Object) pairs);
+            ANCESTORS.clear();
             if (!(n instanceof Integer count) || count < 0) return false;
             builtFor = key;
             return true;
@@ -85,12 +92,20 @@ final class NativeClassIndex {
         }
     }
 
-    /** Strict transitive subtype answer, or null when the native index does not know the class. */
-    static synchronized Boolean isSubclass(String cls, String target) {
-        if (!available() || cls == null || target == null) return null;
+    /**
+     * Transitive ancestors (superclass chain and interfaces, BFS). Names outside the indexed archives
+     * appear as leaves. Null when the native index does not know the class (caller walks the Java side).
+     */
+    static List<String> ancestors(String cls) {
+        if (cls == null || !available()) return null;
+        List<String> cached = ANCESTORS.get(cls);
+        if (cached != null) return cached;
         try {
             if (!(Boolean) known.invoke(null, cls)) return null;
-            return (Boolean) isSubclass.invoke(null, cls, target);
+            String[] out = (String[]) ancestorsOf.invoke(null, cls);
+            List<String> list = List.of(out);
+            ANCESTORS.put(cls, list);
+            return list;
         } catch (ReflectiveOperationException | RuntimeException e) {
             return null;
         }

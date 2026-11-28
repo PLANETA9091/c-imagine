@@ -136,3 +136,65 @@ fn corrupt_cache_is_rebuilt() {
     let i = load_or_build(&jars, &cache);
     assert!(i.is_subclass("pkg/Mod2", "pkg/Marker"));
 }
+
+const FIXTURE_MAPPING: &str = "# official-style fixture\n\
+net.minecraft.client.gui.screens.Screen -> a:\n\
+\x20   void render(int,int,float) -> render\n\
+net.minecraft.client.gui.screens.ConfirmScreen -> b:\n\
+net.minecraft.client.gui.screens.Screen$Inner -> a$c:\n";
+
+fn obf_client(dir: &std::path::Path) -> (PathBuf, PathBuf) {
+    let jar_path = dir.join("client.jar");
+    std::fs::write(
+        &jar_path,
+        jar(&[
+            ("a.class", class_file("a", Some("java/lang/Object"), &[], 0x21, false)),
+            ("b.class", class_file("b", Some("a"), &[], 0x21, false)),
+            ("a$c.class", class_file("a$c", Some("a"), &[], 0x21, false)),
+        ]),
+    )
+    .unwrap();
+    let map_path = dir.join("client.mappings.txt");
+    std::fs::write(&map_path, FIXTURE_MAPPING).unwrap();
+    (jar_path, map_path)
+}
+
+#[test]
+fn mapped_jar_exposes_named_classes() {
+    let d = tmpdir("mapped");
+    let (jar_path, map_path) = obf_client(&d);
+    let idx = cim_classgraph::build_mapped(std::slice::from_ref(&jar_path), &[(jar_path.clone(), map_path.clone())]);
+    let screen = "net/minecraft/client/gui/screens/Screen";
+    let confirm = "net/minecraft/client/gui/screens/ConfirmScreen";
+    assert!(idx.get(screen).is_some());
+    assert!(idx.get("a").is_none());
+    assert_eq!(idx.get(confirm).unwrap().super_name.as_deref(), Some(screen));
+    assert!(idx.is_subclass(confirm, screen));
+    assert!(idx.is_subclass(&format!("{screen}$Inner"), screen));
+    // unmapped superclass keeps its own name
+    assert_eq!(idx.get(screen).unwrap().super_name.as_deref(), Some("java/lang/Object"));
+}
+
+#[test]
+fn unmapped_jar_keeps_obfuscated_names() {
+    let d = tmpdir("unmapped");
+    let (jar_path, _map) = obf_client(&d);
+    let idx = build(&[jar_path]);
+    assert!(idx.get("b").is_some());
+    assert!(idx.get("net/minecraft/client/gui/screens/ConfirmScreen").is_none());
+}
+
+#[test]
+fn mapped_cache_key_tracks_mapping_file() {
+    let d = tmpdir("mapkey");
+    let (jar_path, map_path) = obf_client(&d);
+    let pairs = vec![(jar_path.clone(), map_path.clone())];
+    let k1 = cim_classgraph::cache_key_mapped(std::slice::from_ref(&jar_path), &pairs);
+    assert_ne!(k1, cim_classgraph::cache_key(std::slice::from_ref(&jar_path)));
+    std::fs::write(&map_path, format!("{FIXTURE_MAPPING}net.minecraft.Extra -> z:\n")).unwrap();
+    assert_ne!(k1, cim_classgraph::cache_key_mapped(std::slice::from_ref(&jar_path), &pairs));
+    let cache = d.join("cache");
+    let idx = cim_classgraph::load_or_build_mapped(&[jar_path], &pairs, &cache);
+    assert!(idx.get("net/minecraft/client/gui/screens/Screen").is_some());
+    assert_eq!(std::fs::read_dir(&cache).unwrap().count(), 1);
+}

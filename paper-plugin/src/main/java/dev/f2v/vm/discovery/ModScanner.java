@@ -278,8 +278,23 @@ public final class ModScanner {
         archives.addAll(VanillaArchives.resolve());
         if (archives.isEmpty()) return scan(jarPath, null);
         NativeClassIndex.ensure(archives, Path.of(System.getProperty("user.dir", ".")).toAbsolutePath().normalize());
-        try (CrossJarClassPath classPath = CrossJarClassPath.index(archives)) {
-            return scan(jarPath, classPath);
+        // One cross-jar index per archive set for the whole boot: every mod in a directory shares
+        // the same sibling list, so the index (and its bounded ClassNode cache) is built once.
+        return scan(jarPath, sharedClassPath(archives));
+    }
+
+    private static final Object SHARED_LOCK = new Object();
+    private static CrossJarClassPath sharedClassPath;
+    private static String sharedFingerprint;
+
+    private static CrossJarClassPath sharedClassPath(List<Path> archives) throws IOException {
+        String fingerprint = CrossJarClassPath.fingerprintOf(archives);
+        synchronized (SHARED_LOCK) {
+            if (sharedClassPath == null || !fingerprint.equals(sharedFingerprint)) {
+                sharedClassPath = CrossJarClassPath.index(archives);
+                sharedFingerprint = fingerprint;
+            }
+            return sharedClassPath;
         }
     }
 
@@ -1244,9 +1259,10 @@ public final class ModScanner {
     private static boolean isSubclassName(String type, String root, Map<String, ClassNode> nodes) {
         if (type == null || root == null) return false;
         if (root.equals(type)) return true;
-        // Native answers only positives: the Java walk keeps the built-in vanilla shortcut roots
-        // (VANILLA_*_ROOTS) that the index cannot see when a vanilla archive is absent.
-        if (Boolean.TRUE.equals(NativeClassIndex.isSubclass(type, root))) return true;
+        List<String> nativeAncestors = NativeClassIndex.ancestors(type);
+        if (nativeAncestors != null) {
+            return nativeAncestors.contains(root) || hasBlockEntityCtor(type, nodes);
+        }
         String current = type;
         Set<String> seen = new HashSet<>();
         while (current != null && seen.add(current)) {
@@ -1330,9 +1346,26 @@ public final class ModScanner {
             "net/minecraft/world/inventory/AnvilMenu",
             "net/minecraft/world/inventory/CrafterMenu");
 
+    /** Same answer as the Java walk, computed from the native ancestor list: the index's chain
+     *  plus the vanilla shortcut roots (VANILLA_MENU_ROOTS / VANILLA_ENTITY_ROOTS). */
+    private static boolean nativeHasAncestor(List<String> ancestors, String cls, String target) {
+        if (cls.equals(target)) return false;
+        if (ancestors.contains(target)) return true;
+        if (target.equals("net/minecraft/world/inventory/AbstractContainerMenu")) {
+            for (String a : ancestors) if (VANILLA_MENU_ROOTS.contains(a)) return true;
+        }
+        if (target.equals("net/minecraft/world/entity/Entity")) {
+            for (String a : ancestors) {
+                if (VANILLA_ENTITY_ROOTS.contains(a) && a.startsWith("net/minecraft/world/entity/")) return true;
+            }
+        }
+        return false;
+    }
+
     private static boolean isSubclass(ClassNode node, String target, Map<String, ClassNode> nodes) {
         if (node == null || target == null) return false;
-        if (Boolean.TRUE.equals(NativeClassIndex.isSubclass(node.name, target))) return true;
+        List<String> nativeAncestors = NativeClassIndex.ancestors(node.name);
+        if (nativeAncestors != null) return nativeHasAncestor(nativeAncestors, node.name, target);
         Set<String> seen = new HashSet<>();
         java.util.ArrayDeque<String> pending = new java.util.ArrayDeque<>();
         if (node.superName != null) pending.addLast(node.superName);
