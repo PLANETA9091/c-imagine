@@ -7568,7 +7568,10 @@ public final class F2vPack {
                             .getBytes(StandardCharsets.UTF_8));
             Path jar = root.resolve("fixture.jar");
             writeJar(jar, jarEntries);
-            String[] refs = {"fixture:flat_thing", "fixture:side_thing", "fixture:own_thing"};
+            // the composite builder receives the ITEM MODEL ref (the item/
+            // path segment included — the item id's model lives at
+            // assets/<ns>/models/item/<path>.json)
+            String[] refs = {"fixture:item/flat_thing", "fixture:item/side_thing", "fixture:item/own_thing"};
             String[] expected = {"front", "side", "side"};
             for (int i = 0; i < refs.length; i++) {
                 ObjMesh.resetBaker();
