@@ -260,8 +260,9 @@ public final class ModScanner {
 
     /**
      * Scans one archive against its dependency context: the sibling jars in the same
-     * directory plus the vanilla archive named by {@code -Df2v.vanillaJar} when that
-     * file exists. Superclasses that live in another jar (a Backpacks screen extending a
+     * directory plus the vanilla archives from {@link VanillaArchives#resolve()} (explicit
+     * -Df2v.vanillaJar, else the layer's NeoForge 1.21.1 install, else the Paper cache).
+     * Superclasses that live in another jar (a Backpacks screen extending a
      * Core screen, a vanilla intermediate such as ConfirmScreen) then resolve, so the
      * Screen and menu checks see the real inheritance chain.
      */
@@ -274,10 +275,7 @@ public final class ModScanner {
                         .sorted().forEach(archives::add);
             }
         }
-        String vanilla = System.getProperty("f2v.vanillaJar");
-        if (vanilla != null && !vanilla.isBlank() && Files.isRegularFile(Path.of(vanilla))) {
-            archives.add(Path.of(vanilla));
-        }
+        archives.addAll(VanillaArchives.resolve());
         if (archives.isEmpty()) return scan(jarPath, null);
         try (CrossJarClassPath classPath = CrossJarClassPath.index(archives)) {
             return scan(jarPath, classPath);
@@ -1249,7 +1247,13 @@ public final class ModScanner {
         Set<String> seen = new HashSet<>();
         while (current != null && seen.add(current)) {
             ClassNode candidate = nodes == null ? null : nodes.get(current);
-            if (candidate == null) break;
+            if (candidate == null) {
+                String builtin = VanillaArchives.clientSuperclass(current);
+                if (builtin == null) break;
+                if (root.equals(builtin)) return true;
+                current = builtin;
+                continue;
+            }
             if (root.equals(candidate.superName)) return true;
             current = candidate.superName;
         }
@@ -1341,7 +1345,11 @@ public final class ModScanner {
             if (VANILLA_ENTITY_ROOTS.contains(cur) && cur.startsWith("net/minecraft/world/entity/")
                     && target.equals("net/minecraft/world/entity/Entity")) return true;
             ClassNode parent = nodes.get(cur);
-            if (parent == null) continue;
+            if (parent == null) {
+                String builtin = VanillaArchives.clientSuperclass(cur);
+                if (builtin != null) pending.addLast(builtin);
+                continue;
+            }
             if (parent.superName != null) pending.addLast(parent.superName);
             if (parent.interfaces != null) {
                 for (String iface : parent.interfaces) if (iface != null) pending.addLast(iface);
