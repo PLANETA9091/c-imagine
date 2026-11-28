@@ -85,6 +85,7 @@ import json
 import os
 import re
 import sys
+import tempfile
 
 import numpy as np
 from PIL import Image
@@ -132,6 +133,46 @@ def pixel_swap_pair(ours_png, truth_png, shift):
     return {"pixel_mae": round(mae, 4), "pixel_mae_rb": round(mae_rb, 4),
             "pixel_ratio": round(mae_rb / mae, 3) if mae > 0 else None,
             "pixel_n": int(joint.sum())}
+
+
+def fixture_liveness(out_dir):
+    """THE DETECTOR LIVENESS FIXTURE (the gate-grade precondition): a
+    deterministic synthetic pair the audit MUST flag — ours = a structured
+    pattern, truth = ours with R/B hard-swapped. The unswapped MAE is huge
+    (the images disagree everywhere) while the swapped MAE collapses to ~0,
+    so pixel_ratio << 1 and the flag must fire. Runs without any reports or
+    seed (the liveness of the MATH inside the verdict environment); a NOT-
+    detected fixture is the receipt that the audit ran dead. Returns the
+    capture_integrity dict."""
+    rng = np.random.default_rng(20261128)
+    w, h = 96, 96
+    base = np.zeros((h, w, 4), dtype=np.float32)
+    base[..., :3] = rng.integers(16, 240, size=(h, w, 3))
+    base[..., 3] = 255.0
+    ours_path = os.path.join(out_dir, "fixture_ours.png")
+    truth_path = os.path.join(out_dir, "fixture_truth.png")
+    Image.fromarray(base.astype(np.uint8)).save(ours_path)
+    swapped = base.copy()
+    swapped[..., :3] = swapped[..., [2, 1, 0]]
+    Image.fromarray(swapped.astype(np.uint8)).save(truth_path)
+    pair = pixel_swap_pair(ours_path, truth_path, [0, 0])
+    detected = bool(pair and pair["pixel_ratio"] is not None
+                    and pair["pixel_ratio"] <= SWAP_FACTOR
+                    and pair["pixel_mae"] > PIXEL_SWAP_FLOOR)
+    os.remove(ours_path)
+    os.remove(truth_path)
+    return {
+        "schema": "capture-integrity-v1",
+        "status": "PROVISIONAL — report-only, never gate-read",
+        "fixture": {
+            "expected": "flagged (the truth IS ours' hard R/B swap)",
+            "detected": detected,
+            "pair": pair,
+            "law": "the fixture NOT detected = the audit ran dead — the "
+                   "gate-flip precondition (detected 3/3 consecutive runs) "
+                   "can never start from a dead detector",
+        },
+    }
 
 
 class SeedIndex:
@@ -197,8 +238,12 @@ class SeedIndex:
 
 def main(argv=None):
     ap = argparse.ArgumentParser()
-    ap.add_argument("reports_root")
-    ap.add_argument("seed_scenes")
+    ap.add_argument("reports_root", nargs="?", default=None)
+    ap.add_argument("seed_scenes", nargs="?", default=None)
+    ap.add_argument("--fixture-only", action="store_true",
+                    help="run the detector-liveness fixture without reports"
+                         " or seed (the capture-integrity receipt for the"
+                         " verdict job)")
     ap.add_argument("--tolerance", type=float, default=0.18)
     ap.add_argument("--swap-factor", type=float, default=SWAP_FACTOR)
     ap.add_argument("--swap-floor", type=float, default=SWAP_FLOOR)
@@ -209,6 +254,24 @@ def main(argv=None):
     ap.add_argument("--out", default="/tmp/capture-fingerprint.json")
     ap.add_argument("--top", type=int, default=24)
     args = ap.parse_args(argv)
+
+    if args.fixture_only:
+        integrity = fixture_liveness(tempfile.mkdtemp(prefix="capfix-"))
+        with open(args.out, "w", encoding="utf-8") as fh:
+            json.dump(integrity, fh, indent=1)
+        det = integrity["fixture"]["detected"]
+        pair = integrity["fixture"]["pair"] or {}
+        print(f"capture-integrity fixture: detected={det} "
+              f"(pixel_ratio={pair.get('pixel_ratio')}, n={pair.get('pixel_n')})")
+        if not det:
+            print("capture-integrity fixture: NOT DETECTED — the audit ran"
+                  " dead; the gate-flip precondition can never start")
+            return 2
+        print(f"-> {args.out}")
+        return 0
+
+    if not args.reports_root or not args.seed_scenes:
+        ap.error("reports_root and seed_scenes are required without --fixture-only")
 
     seed = SeedIndex(args.seed_scenes)
     # the capture means for the nearest-match search

@@ -4783,6 +4783,12 @@ jobs:
           ENTRIES=$(find truth-meta -name 'scene-manifest-entries.tsv' | head -1)
           python3 scripts/cimscene/registry-census.py --scenes scenes --entries "$ENTRIES" \
             --json gallery-verdict/registry-census.json | tee gallery-verdict/registry-census.txt
+          # THE CAPTURE-INTEGRITY receipt (report-only): the R/B-swap
+          # detector's liveness fixture — the gate-flip precondition
+          # (detected 3/3) can never start from a dead detector. Never gates.
+          python3 scripts/cimscene/capture-fingerprint.py --fixture-only \
+            --out gallery-verdict/capture-integrity.json \
+            || echo "capture-integrity: the fixture rode non-zero (see the json)"
           # merge the boot logs (each shard's exhaustion markers live in its
           # own log; the terminal-marker check must see the union)
           find truth-meta -name 'boot.log' -type f | sort | xargs cat > merged-boot.log
@@ -4887,6 +4893,13 @@ jobs:
                   open('gallery-verdict/registry-census.json'))
           except Exception as exc:
               summary["registry_census"] = {"error": str(exc)}
+          # THE CAPTURE INTEGRITY rides the summary (report-only): the swap
+          # detector's liveness fixture state.
+          try:
+              summary["capture_integrity"] = json.load(
+                  open('gallery-verdict/capture-integrity.json'))
+          except Exception as exc:
+              summary["capture_integrity"] = {"error": str(exc)}
           json.dump(summary, open('gallery-verdict/verdict-summary.json', 'w'), indent=1)
           PY
           exit $GATE

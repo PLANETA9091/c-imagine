@@ -180,6 +180,35 @@ class ChannelSwapAudit(unittest.TestCase):
             self.assertEqual(d["pixel_swap"]["pairs"], 0)
             self.assertEqual(d["channel_swap"]["flagged"], 1)
 
+    def test_fixture_liveness(self):
+        # the detector-liveness fixture (the gate-flip precondition): the
+        # synthetic hard-swap pair MUST flag — a dead detector receipted.
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            "capture_fingerprint", TOOL)
+        cf = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(cf)
+        with tempfile.TemporaryDirectory() as root:
+            integrity = cf.fixture_liveness(root)
+        self.assertTrue(integrity["fixture"]["detected"],
+                        "the synthetic hard R/B swap must flag")
+        pair = integrity["fixture"]["pair"]
+        self.assertIsNotNone(pair)
+        self.assertLessEqual(pair["pixel_ratio"], cf.SWAP_FACTOR)
+        self.assertGreater(pair["pixel_mae"], cf.PIXEL_SWAP_FLOOR)
+
+    def test_fixture_only_mode(self):
+        # --fixture-only runs without reports_root/seed_scenes and lands the
+        # capture-integrity json (the verdict-job shape); rc 0 = detected.
+        with tempfile.TemporaryDirectory() as root:
+            out = os.path.join(root, "ci.json")
+            p = subprocess.run(
+                [sys.executable, TOOL, "--fixture-only", "--out", out],
+                capture_output=True, text=True)
+            self.assertEqual(p.returncode, 0, p.stderr)
+            d = json.load(open(out))
+            self.assertTrue(d["fixture"]["detected"])
+
 
 if __name__ == "__main__":
     unittest.main()
