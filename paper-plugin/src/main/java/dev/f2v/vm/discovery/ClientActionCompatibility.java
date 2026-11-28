@@ -764,7 +764,7 @@ public final class ClientActionCompatibility {
         } while (changed && remaining-- > 0);
 
         Set<String> out = targetsByScreen.get(wanted);
-        return out == null || out.isEmpty() ? Set.of() : Set.copyOf(out);
+        return out == null || out.isEmpty() ? Set.of() : OrderedCopies.set(out);
     }
 
     private static void collectDirectScreenTargetTypes(ModScanner.Profile profile,

@@ -61,7 +61,7 @@ final class CrossJarClassPath implements AutoCloseable {
     private final String fingerprint;
 
     private CrossJarClassPath(Map<String, Location> locations, String fingerprint) {
-        this.locations = Map.copyOf(locations);
+        this.locations = OrderedCopies.map(locations);
         this.fingerprint = fingerprint;
     }
 

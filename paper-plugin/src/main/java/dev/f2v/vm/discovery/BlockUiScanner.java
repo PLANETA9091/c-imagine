@@ -252,7 +252,7 @@ public final class BlockUiScanner {
             Integer candidate = ranks.get(route.targetType.replace('.', '/'));
             if (candidate != null && candidate == best) out.addAll(route.screens);
         }
-        return Set.copyOf(out);
+        return OrderedCopies.set(out);
     }
 
     /** Scanner-proven hold/HUD interaction routes for a live block-entity hierarchy. */

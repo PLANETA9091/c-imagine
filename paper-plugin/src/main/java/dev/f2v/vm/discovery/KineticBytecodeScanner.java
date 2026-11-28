@@ -250,7 +250,7 @@ public final class KineticBytecodeScanner {
                     }
                 }
             }
-            return new AnimationSemantics(Map.copyOf(fields), Map.copyOf(methods));
+            return new AnimationSemantics(OrderedCopies.map(fields), OrderedCopies.map(methods));
         }
 
         Effect fieldEffect(FieldInsnNode field) {
@@ -692,9 +692,9 @@ public final class KineticBytecodeScanner {
         private Map<Effect, Set<Integer>> freezeEffects(Map<Effect, Set<Integer>> input) {
             LinkedHashMap<Effect, Set<Integer>> out = new LinkedHashMap<>();
             for (Map.Entry<Effect, Set<Integer>> entry : input.entrySet()) {
-                out.put(entry.getKey(), Set.copyOf(entry.getValue()));
+                out.put(entry.getKey(), OrderedCopies.set(entry.getValue()));
             }
-            return Map.copyOf(out);
+            return OrderedCopies.map(out);
         }
 
         private Frame<FlowValue>[] frames(ClassNode concrete, String owner, MethodNode method,
@@ -851,7 +851,7 @@ public final class KineticBytecodeScanner {
                     }
                 }
             }
-            return Set.copyOf(out);
+            return OrderedCopies.set(out);
         }
 
         private void collectNumericFields(String owner, String name, String desc, Set<String> out,
@@ -988,13 +988,13 @@ public final class KineticBytecodeScanner {
                   Collection<String> modelRefs, boolean time,
                   Collection<String> timeScaledSources) {
             this.size = Math.max(1, size);
-            this.sources = sources == null || sources.isEmpty() ? Set.of() : Set.copyOf(sources);
+            this.sources = sources == null || sources.isEmpty() ? Set.of() : OrderedCopies.set(sources);
             this.objectPaths = objectPaths == null || objectPaths.isEmpty()
-                    ? Set.of() : Set.copyOf(objectPaths);
-            this.modelRefs = modelRefs == null || modelRefs.isEmpty() ? Set.of() : Set.copyOf(modelRefs);
+                    ? Set.of() : OrderedCopies.set(objectPaths);
+            this.modelRefs = modelRefs == null || modelRefs.isEmpty() ? Set.of() : OrderedCopies.set(modelRefs);
             this.time = time;
             this.timeScaledSources = timeScaledSources == null || timeScaledSources.isEmpty()
-                    ? Set.of() : Set.copyOf(timeScaledSources);
+                    ? Set.of() : OrderedCopies.set(timeScaledSources);
         }
 
         static FlowValue unknown(int size) {
@@ -1035,13 +1035,13 @@ public final class KineticBytecodeScanner {
                     first.size() + second.size()));
             for (String value : first) {
                 out.add(value);
-                if (out.size() >= MAX_PROVENANCE) return Set.copyOf(out);
+                if (out.size() >= MAX_PROVENANCE) return OrderedCopies.set(out);
             }
             for (String value : second) {
                 out.add(value);
                 if (out.size() >= MAX_PROVENANCE) break;
             }
-            return Set.copyOf(out);
+            return OrderedCopies.set(out);
         }
 
         private static Set<String> firstN(Set<String> values, int limit) {
@@ -1050,7 +1050,7 @@ public final class KineticBytecodeScanner {
                 out.add(value);
                 if (out.size() >= limit) break;
             }
-            return Set.copyOf(out);
+            return OrderedCopies.set(out);
         }
 
         @Override public int getSize() { return size; }
@@ -1153,7 +1153,7 @@ public final class KineticBytecodeScanner {
                 if (model != null) {
                     LinkedHashSet<String> combined = new LinkedHashSet<>(models);
                     combined.add(model);
-                    models = Set.copyOf(combined);
+                    models = OrderedCopies.set(combined);
                 }
                 return new FlowValue(type.getSize(), sources, paths, models,
                         value != null && value.time,
@@ -1196,7 +1196,7 @@ public final class KineticBytecodeScanner {
                 LinkedHashSet<String> scaled = new LinkedHashSet<>(timeScaled);
                 if (left != null && left.time && right != null) scaled.addAll(right.sources);
                 if (right != null && right.time && left != null) scaled.addAll(left.sources);
-                timeScaled = scaled.isEmpty() ? Set.of() : Set.copyOf(scaled);
+                timeScaled = scaled.isEmpty() ? Set.of() : OrderedCopies.set(scaled);
             }
             return new FlowValue(size, merged.sources, merged.objectPaths, merged.modelRefs, merged.time,
                     timeScaled);
@@ -1604,7 +1604,7 @@ public final class KineticBytecodeScanner {
             int index = base + i;
             if (index >= 0 && index < frame.getStackSize()) models.addAll(frame.getStack(index).modelRefs);
         }
-        return models.isEmpty() ? Set.of() : Set.copyOf(models);
+        return models.isEmpty() ? Set.of() : OrderedCopies.set(models);
     }
 
     private static String modelRef(Frame<FlowValue> frame, FieldInsnNode field) {

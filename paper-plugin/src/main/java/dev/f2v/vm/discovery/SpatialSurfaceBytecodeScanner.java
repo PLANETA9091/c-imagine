@@ -535,7 +535,7 @@ public final class SpatialSurfaceBytecodeScanner {
                                               List<String> stateFields) {
         MethodNode best = null;
         int bestScore = Integer.MIN_VALUE;
-        Set<String> wanted = Set.copyOf(stateFields);
+        Set<String> wanted = OrderedCopies.set(stateFields);
         for (MethodNode method : link.methods) {
             if ((method.access & Opcodes.ACC_STATIC) != 0 || !"()Z".equals(method.desc)) continue;
             LinkedHashSet<String> reads = new LinkedHashSet<>();
@@ -573,7 +573,7 @@ public final class SpatialSurfaceBytecodeScanner {
      */
     private static MethodNode traversalMethod(ClassNode link, String stateClass,
                                               List<String> stateFields) {
-        Set<String> wanted = Set.copyOf(stateFields);
+        Set<String> wanted = OrderedCopies.set(stateFields);
         MethodNode best = null;
         int bestScore = Integer.MIN_VALUE;
         for (MethodNode method : link.methods) {

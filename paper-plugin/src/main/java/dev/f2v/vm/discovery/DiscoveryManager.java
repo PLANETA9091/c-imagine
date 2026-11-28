@@ -16,7 +16,7 @@ public final class DiscoveryManager {
     }
 
     public static synchronized Map<String, ModScanner.Profile> profiles() {
-        return Map.copyOf(PROFILES);
+        return OrderedCopies.map(PROFILES);
     }
 
     public static synchronized void publish(Map<String, ModScanner.Profile> profiles) {

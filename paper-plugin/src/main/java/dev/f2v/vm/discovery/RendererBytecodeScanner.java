@@ -1045,7 +1045,7 @@ public final class RendererBytecodeScanner {
         LinkedHashSet<String> wanted = new LinkedHashSet<>(runtimeTypes);
         LinkedHashSet<String> exact = new LinkedHashSet<>();
         for (ModScanner.Profile profile : profiles) collectItemSources(profile, wanted, exact);
-        return Set.copyOf(exact);
+        return OrderedCopies.set(exact);
     }
 
     /** Exact scanner-proven accessor chains to renderer-owned ItemStack containers. */
@@ -1498,7 +1498,7 @@ public final class RendererBytecodeScanner {
             if (model == null) return Map.of();
             out.put(mask, model);
         }
-        return Map.copyOf(out);
+        return OrderedCopies.map(out);
     }
 
     private static String interpretBooleanModelSelector(MethodNode method,
@@ -4206,7 +4206,7 @@ public final class RendererBytecodeScanner {
                     }
                 }
             }
-            if (!enums.isEmpty()) enumsBySurface.put(surface, Set.copyOf(enums));
+            if (!enums.isEmpty()) enumsBySurface.put(surface, OrderedCopies.set(enums));
         }
         if (wantedEnums.isEmpty()) return;
 
@@ -4476,12 +4476,12 @@ public final class RendererBytecodeScanner {
         LinkedHashSet<String> semantic = new LinkedHashSet<>();
         for (Surface surface : surfaces) {
             if (!surface.textureRefs.isEmpty() && primaryRegisteredEntity(surface, entityPath)) {
-                return Set.copyOf(surface.textureRefs);
+                return OrderedCopies.set(surface.textureRefs);
             }
         }
         for (Surface surface : surfaces) {
             if (surface.textureRefs.isEmpty()) continue;
-            if (registeredEntity(surface, entityPath)) return Set.copyOf(surface.textureRefs);
+            if (registeredEntity(surface, entityPath)) return OrderedCopies.set(surface.textureRefs);
             boolean descriptorMatch = surface.entityTypes.stream().anyMatch(type -> {
                 String leaf = leaf(type).toLowerCase(Locale.ROOT)
                         .replace("entity", "").replace("mob", "");
@@ -4492,7 +4492,7 @@ public final class RendererBytecodeScanner {
             if (descriptorMatch) exact.addAll(surface.textureRefs);
             else if (semanticScore(entityPath, surface.clazz) >= 20) semantic.addAll(surface.textureRefs);
         }
-        return Set.copyOf(exact.isEmpty() ? semantic : exact);
+        return OrderedCopies.set(exact.isEmpty() ? semantic : exact);
     }
 
     /** Authored uniform world scale of a bytecode-proven camera-facing unit quad, or zero when the
@@ -4855,8 +4855,8 @@ public final class RendererBytecodeScanner {
         for (Surface surface : selected) presenceRules.addAll(surface.directionalPresenceRules);
         ArrayList<LinearRepeat> repeats = new ArrayList<>();
         for (Surface surface : selected) repeats.addAll(surface.linearRepeats);
-        return new BlockRenderPlan(authoritative, Set.copyOf(refs), Map.copyOf(copies), Map.copyOf(predicates),
-                Set.copyOf(selectors), Set.copyOf(presenceSelectors), List.copyOf(presenceRules), Set.copyOf(targets),
+        return new BlockRenderPlan(authoritative, OrderedCopies.set(refs), OrderedCopies.map(copies), OrderedCopies.map(predicates),
+                OrderedCopies.set(selectors), OrderedCopies.set(presenceSelectors), List.copyOf(presenceRules), OrderedCopies.set(targets),
                 List.copyOf(repeats));
     }
 

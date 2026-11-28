@@ -4940,7 +4940,7 @@ public final class ClientSurfaceScanner {
             }
             cursor = parentNode;
         }
-        return Set.copyOf(hierarchy);
+        return OrderedCopies.set(hierarchy);
     }
 
     private static void attachStateTargetWidgets(ClassSurface surface,
@@ -5185,7 +5185,7 @@ public final class ClientSurfaceScanner {
                 targets.addAll(textInputDerivedStateTargets(resolved.owner(), resolved.method(), nodes,
                         visiting, depth + 1));
             }
-            return Set.copyOf(targets);
+            return OrderedCopies.set(targets);
         } finally {
             visiting.remove(id);
         }
@@ -6782,7 +6782,7 @@ public final class ClientSurfaceScanner {
             }
             local += arguments[i].getSize();
         }
-        return bindings.isEmpty() ? Map.of() : Map.copyOf(bindings);
+        return bindings.isEmpty() ? Map.of() : OrderedCopies.map(bindings);
     }
 
     /** Recover dimensions supplied inside a widget-producing factory. Factory call sites often
@@ -6877,8 +6877,8 @@ public final class ClientSurfaceScanner {
         static final UiKnowledge EMPTY = new UiKnowledge(Map.of(), Map.of());
 
         UiKnowledge {
-            fields = fields == null || fields.isEmpty() ? Map.of() : Map.copyOf(fields);
-            methods = methods == null || methods.isEmpty() ? Map.of() : Map.copyOf(methods);
+            fields = fields == null || fields.isEmpty() ? Map.of() : OrderedCopies.map(fields);
+            methods = methods == null || methods.isEmpty() ? Map.of() : OrderedCopies.map(methods);
         }
     }
 
@@ -7137,9 +7137,9 @@ public final class ClientSurfaceScanner {
             }
             Map<String, Map<Integer, UiValue>> next = new HashMap<>();
             for (Map.Entry<String, Map<Integer, UiValue>> entry : nextMutable.entrySet()) {
-                next.put(entry.getKey(), Map.copyOf(entry.getValue()));
+                next.put(entry.getKey(), OrderedCopies.map(entry.getValue()));
             }
-            next = next.isEmpty() ? Map.of() : Map.copyOf(next);
+            next = next.isEmpty() ? Map.of() : OrderedCopies.map(next);
             if (next.equals(known)) return next;
             known = next;
         }
@@ -7897,7 +7897,7 @@ public final class ClientSurfaceScanner {
                 }
             }
         }
-        return result.isEmpty() ? Map.of() : Map.copyOf(result);
+        return result.isEmpty() ? Map.of() : OrderedCopies.map(result);
     }
 
     /** Resolve the receiver of a fluent callback-registration call without borrowing an unrelated
@@ -9510,7 +9510,7 @@ public final class ClientSurfaceScanner {
             }
         } catch (IllegalArgumentException ignored) {
         }
-        return Set.copyOf(out);
+        return OrderedCopies.set(out);
     }
 
     private static boolean assignableToAny(String candidate, Set<String> targets,
@@ -10354,7 +10354,7 @@ public final class ClientSurfaceScanner {
         String wanted = normalizeKey(key);
         LinkedHashSet<Kind> out = new LinkedHashSet<>();
         for (ModScanner.Profile profile : profiles) collectKeyKinds(profile, wanted, out);
-        return Set.copyOf(out);
+        return OrderedCopies.set(out);
     }
 
     /** Exact screen classes opened by the requested key according to traced bytecode. */
@@ -10570,7 +10570,7 @@ public final class ClientSurfaceScanner {
         String wanted = normalizeKey(key);
         LinkedHashSet<String> out = new LinkedHashSet<>();
         for (ModScanner.Profile profile : profiles) collectActionTargets(profile, wanted, type, out);
-        return Set.copyOf(out);
+        return OrderedCopies.set(out);
     }
 
     private static void collectActionTargets(ModScanner.Profile profile, String wanted,
@@ -10660,7 +10660,7 @@ public final class ClientSurfaceScanner {
                 String key = surface.clazz + '\n' + hook.method + '\n' + hook.descriptor;
                 if (seen.add(key)) {
                     out.add(new HookTarget(surface.clazz, hook.method, hook.descriptor,
-                            Set.copyOf(hook.kinds)));
+                            OrderedCopies.set(hook.kinds)));
                 }
             }
         }

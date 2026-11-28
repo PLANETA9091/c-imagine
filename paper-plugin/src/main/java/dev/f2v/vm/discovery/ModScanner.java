@@ -301,6 +301,24 @@ public final class ModScanner {
         return fresh;
     }
 
+    /**
+     * Scans several jars in parallel (bounded by ParallelPackWork's pool, i.e. the core count).
+     * Results keep the input order. Each jar shares the one cross-jar index built on first use.
+     */
+    public static List<Profile> scanAll(List<Path> jars) throws IOException {
+        try {
+            return dev.f2v.pack.ParallelPackWork.mapOrdered(jars, jar -> {
+                try {
+                    return scan(jar);
+                } catch (IOException failure) {
+                    throw new java.io.UncheckedIOException(failure);
+                }
+            });
+        } catch (java.io.UncheckedIOException failure) {
+            throw failure.getCause();
+        }
+    }
+
     /** Profile cache directory; -Df2v.scanCache=off disables it, default is ./cache/modscan. */
     static Path scanCacheDir() {
         String configured = System.getProperty("f2v.scanCache");

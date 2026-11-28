@@ -973,8 +973,24 @@ public final class BehaviorBytecodeScanner {
     }
 
     private static boolean lowerDescHasPacket(String desc) {
-        String lower = desc == null ? "" : desc.toLowerCase(Locale.ROOT);
-        return lower.contains("packet") || lower.contains("payload") || lower.contains("object;");
+        // Case-insensitive ASCII scan: avoids allocating a lowered copy of every call descriptor.
+        return containsIgnoreCase(desc, "packet") || containsIgnoreCase(desc, "payload")
+                || containsIgnoreCase(desc, "object;");
+    }
+
+    /** {@code haystack.toLowerCase(ROOT).contains(lowerNeedle)} without the copy; needle is lowercase ASCII. */
+    static boolean containsIgnoreCase(String haystack, String lowerNeedle) {
+        if (haystack == null) return false;
+        return haystack.length() >= lowerNeedle.length()
+                && indexOfIgnoreCase(haystack, lowerNeedle) >= 0;
+    }
+
+    private static int indexOfIgnoreCase(String haystack, String lowerNeedle) {
+        int last = haystack.length() - lowerNeedle.length();
+        for (int i = 0; i <= last; i++) {
+            if (haystack.regionMatches(true, i, lowerNeedle, 0, lowerNeedle.length())) return i;
+        }
+        return -1;
     }
 
     private static void propagateLocalEffects(Map<String, MethodBehavior> methods) {
